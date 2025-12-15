@@ -1,81 +1,113 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Vortex Mini Editor</title>
-    <link rel="stylesheet" href="style.css" />
-    <!-- Material Components Web (CSS + JS) and Material Icons -->
-    <link rel="stylesheet" href="https://unpkg.com/material-components-web@14.0.0/dist/material-components-web.min.css">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <script>
-      // configure Monaco loader from unpkg CDN
-      var require = { paths: { vs: 'https://unpkg.com/monaco-editor@0.39.0/min/vs' } };
-    </script>
-    <script src="https://unpkg.com/monaco-editor@0.39.0/min/vs/loader.js"></script>
-    <script src="https://unpkg.com/material-components-web@14.0.0/dist/material-components-web.min.js"></script>
-  </head>
-  <body>
-    <div id="main-layout">
-      <aside id="explorer-pane" class="collapsed">
-        <div class="explorer-header">
-          <div class="explorer-title">Explorer</div>
-          <div class="explorer-actions">
-            <button id="back-to-projects" class="icon-btn" title="Back to projects">
-              <span class="material-icons">apps</span>
-            </button>
-            <button id="explorer-change" class="icon-btn" title="Change folder">↻</button>
+
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vortex Mini Editor</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Material Components Web (CSS + JS) and Material Icons -->
+  <link rel="stylesheet" href="vendor/mdc/material-components-web.min.css">
+  <link href="vendor/material-icons.css" rel="stylesheet">
+  <!-- x-data-spreadsheet CSS -->
+  <link rel="stylesheet" href="./node_modules/x-data-spreadsheet/dist/xspreadsheet.css" />
+  <!-- Content Security Policy -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self' file:; script-src 'self' 'unsafe-inline' 'unsafe-eval' file:; style-src 'self' 'unsafe-inline' file:; font-src 'self' data: file:; frame-src 'self' file:; img-src 'self' data: file:;">
+  <script>
+    // configure Monaco loader from local vendor
+    var require = { paths: { vs: 'vendor/monaco/vs' } };
+  </script>
+  <script src="vendor/monaco/vs/loader.js"></script>
+  <script src="vendor/mdc/material-components-web.min.js"></script>
+</head>
+
+<body>
+  <div id="main-layout">
+    <aside id="explorer-pane" class="collapsed">
+      <div class="explorer-header">
+        <div class="explorer-title">Explorer</div>
+        <div class="explorer-actions">
+          <button id="back-to-projects" class="icon-btn" title="Back to projects">
+            <span class="material-icons">apps</span>
+          </button>
+          <button id="explorer-change" class="icon-btn" title="Change folder">↻</button>
+        </div>
+      </div>
+      <div id="explorer-root" class="explorer-root-label">No folder</div>
+      <div id="explorer-tree" class="explorer-tree"></div>
+
+      <div class="outline-pane">
+        <div class="outline-header">Outline</div>
+        <div id="outline-tree" class="outline-tree"></div>
+      </div>
+    </aside>
+
+    <button id="explorer-reopen" class="explorer-reopen-btn" title="Open explorer">
+      <span class="material-icons">chevron_right</span>
+    </button>
+
+    <div id="editor-area">
+      <div id="split-container">
+        <div id="editor-pane-left" class="editor-pane">
+          <nav id="tabbar-left" class="mdc-tab-bar tabbar-pane" role="tablist"></nav>
+          <div class="editor-wrapper">
+            <div id="editor-left" class="editor"></div>
+            <iframe id="pdf-frame-left" class="pdf-frame" title="PDF preview" style="display: none;"></iframe>
+            <div class="drop-zone" data-target="left"></div>
           </div>
         </div>
-        <div id="explorer-root" class="explorer-root-label">No folder</div>
-        <div id="explorer-tree" class="explorer-tree"></div>
-        
-        <div class="outline-pane">
-          <div class="outline-header">Outline</div>
-          <div id="outline-tree" class="outline-tree"></div>
-        </div>
-      </aside>
-
-      <button id="explorer-reopen" class="explorer-reopen-btn" title="Open explorer">
-        <span class="material-icons">chevron_right</span>
-      </button>
-
-      <div id="editor-area">
-        <div id="split-container">
-          <div id="editor-pane-left" class="editor-pane">
-            <nav id="tabbar-left" class="mdc-tab-bar tabbar-pane" role="tablist"></nav>
-            <div class="editor-wrapper">
-              <div id="editor-left" class="editor"></div>
-              <iframe id="pdf-frame-left" class="pdf-frame" title="PDF preview" style="display: none;"></iframe>
-              <div class="drop-zone" data-target="left"></div>
-            </div>
-          </div>
-          <div id="split-divider"></div>
-          <div id="editor-pane-right" class="editor-pane" style="display: none;">
-            <nav id="tabbar-right" class="mdc-tab-bar tabbar-pane" role="tablist"></nav>
-            <div class="editor-wrapper">
-              <div id="editor-right" class="editor"></div>
-              <iframe id="pdf-frame-right" class="pdf-frame" title="PDF preview" style="display: none;"></iframe>
-              <div class="drop-zone" data-target="right"></div>
-            </div>
+        <div id="split-divider"></div>
+        <div id="editor-pane-right" class="editor-pane" style="display: none;">
+          <nav id="tabbar-right" class="mdc-tab-bar tabbar-pane" role="tablist"></nav>
+          <div class="editor-wrapper">
+            <div id="editor-right" class="editor"></div>
+            <iframe id="pdf-frame-right" class="pdf-frame" title="PDF preview" style="display: none;"></iframe>
+            <div class="drop-zone" data-target="right"></div>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
-    <script type="module" src="renderer.js"></script>
+  <script type="module" src="renderer.js"></script>
 
-    <!-- Context Menu -->
-    <div id="context-menu" class="context-menu" style="display: none;">
-      <div class="menu-item" data-action="cut">Cut</div>
-      <div class="menu-item" data-action="copy">Copy</div>
-      <div class="menu-item" data-action="delete">Delete</div>
-      <div class="menu-separator"></div>
-      <div class="menu-item" data-action="copy-path">Copy Path</div>
-      <div class="menu-item" data-action="copy-relative-path">Copy Relative Path</div>
-      <div class="menu-separator"></div>
-      <div class="menu-item" data-action="rename">Rename</div>
+  <!-- Context Menu -->
+  <div id="context-menu" class="context-menu" style="display: none;">
+    <div class="menu-item" data-action="cut">Cut</div>
+    <div class="menu-item" data-action="copy">Copy</div>
+    <div class="menu-item" data-action="delete">Delete</div>
+    <div class="menu-separator"></div>
+    <div class="menu-item" data-action="copy-path">Copy Path</div>
+    <div class="menu-item" data-action="copy-relative-path">Copy Relative Path</div>
+    <div class="menu-separator"></div>
+    <div class="menu-item" data-action="rename">Rename</div>
+  </div>
+
+  <!-- Table Editor Modal -->
+  <div id="modal-overlay" style="display: none;">
+    <div class="modal-content" style="width: 700px; max-width: 90vw;">
+      <div class="modal-header">
+        <div class="modal-title">Insert Table</div>
+        <button id="modal-close" class="icon-btn" title="Close">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 0; overflow: hidden; height: 400px; background: #fff;">
+        <div id="xspreadsheet"></div>
+      </div>
+      <div class="modal-footer"
+        style="padding: 10px; border-top: 1px solid #444; display: flex; justify-content: flex-end; gap: 10px;">
+        <button id="te-cancel" class="te-btn">Cancel</button>
+        <button id="te-insert" class="te-btn primary">Insert Table</button>
+      </div>
     </div>
-  </body>
+  </div>
+
+  <!-- x-data-spreadsheet JS -->
+  <script src="./node_modules/x-data-spreadsheet/dist/xspreadsheet.js"></script>
+
+</body>
+
 </html>

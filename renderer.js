@@ -6,6 +6,7 @@ import { hideDropZones } from './src/dom.js';
 import { setupDropZones, setupGlobalDragHandlers } from './src/dragDrop.js';
 import { createNewTab, openFiles, saveActive, saveAsActive } from './src/tabs.js';
 import { initExplorer, chooseFolderAndLoad, toggleExplorer } from './src/explorer.js';
+import TableEditor from './src/editor/TableEditor.js';
 
 console.log('All imports loaded successfully');
 
@@ -67,7 +68,7 @@ async function bootstrap() {
     console.log('Loading project:', currentProject);
     const { loadFolder } = await import('./src/explorer.js');
     await loadFolder(currentProject);
-    
+
     // Initialize LaTeX services subscription
     initLatexServicesListeners();
   }
@@ -78,6 +79,28 @@ async function bootstrap() {
     }
   } catch (e) {
     // ignore if MDC not loaded
+  }
+
+  // Initialize Table Editor
+  const tableEditor = new TableEditor();
+
+  if (window.menuAPI) {
+    window.menuAPI.onInsertTable(() => {
+      tableEditor.open((latex) => {
+        // Insert into active editor
+        const activePane = state.activePane;
+        const editor = state.editors[activePane];
+        if (editor) {
+          const position = editor.getPosition();
+          editor.executeEdits('table-insert', [{
+            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+            text: latex,
+            forceMoveMarkers: true
+          }]);
+          editor.focus();
+        }
+      });
+    });
   }
 }
 

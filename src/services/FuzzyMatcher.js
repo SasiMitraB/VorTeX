@@ -1,4 +1,5 @@
-const fuzzysort = require('fuzzysort');
+const fuzzysortRaw = require('fuzzysort');
+const fuzzysort = fuzzysortRaw.default || fuzzysortRaw;
 
 /**
  * Default options for fuzzy search
@@ -72,9 +73,15 @@ function formatHighlighted(result, keys) {
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
     const match = result[i];
-    
+
     if (match && match.highlight) {
-      highlighted[key] = fuzzysort.highlight(match, '<mark>', '</mark>');
+      if (typeof fuzzysort.highlight === 'function') {
+        highlighted[key] = fuzzysort.highlight(match, '<mark>', '</mark>');
+      } else {
+        // Fallback: Use simple string replacement or just return target
+        // For now, just return target to prevent crash
+        highlighted[key] = match.target;
+      }
     }
   }
 

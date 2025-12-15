@@ -4,19 +4,29 @@
   "description": "Minimal Monaco + Electron text editor with tabs",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^26.0.0"
+    "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.28.5",
+    "@playwright/test": "^1.57.0",
+    "babel-jest": "^30.2.0",
+    "electron": "^39.2.7",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0"
   },
   "dependencies": {
     "bibtex-parser": "^0.0.0",
     "chokidar": "^3.5.3",
     "electron-store": "^8.2.0",
     "fuzzysort": "^3.1.0",
-    "latex-utensils": "^6.2.0"
+    "latex-utensils": "^6.2.0",
+    "material-components-web": "^14.0.0",
+    "x-data-spreadsheet": "^1.1.9"
   }
 }

@@ -59,7 +59,7 @@ export function switchTab(id, pane = state.activePane) {
   if (state.editors[pane] && tab.type !== 'pdf') {
     state.editors[pane].focus();
   }
-  
+
   // Update outline if it's a tex file
   if (tab.path && tab.path.endsWith('.tex')) {
     updateOutline(tab.path);
