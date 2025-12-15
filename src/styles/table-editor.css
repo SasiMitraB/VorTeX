@@ -1,0 +1,99 @@
+/* Table Editor UI */
+.te-toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 4px;
+}
+
+.te-btn {
+    background: none;
+    border: 1px solid transparent;
+    color: var(--fg);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.te-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.te-btn.active {
+    background: var(--accent);
+    color: white;
+}
+
+.te-grid-container {
+    overflow: auto;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1px;
+}
+
+.te-table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.te-cell {
+    border: 1px solid #444;
+    padding: 0;
+    min-width: 60px;
+    height: 32px;
+    position: relative;
+}
+
+.te-cell input {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    padding: 4px 8px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.te-cell.selected {
+    outline: 2px solid var(--accent);
+    z-index: 2;
+}
+
+.te-cell.bold input {
+    font-weight: bold;
+}
+
+/* Spreadsheet Headers */
+.te-header-row {
+    background: #2c313a;
+    color: #9da5b4;
+    font-size: 11px;
+    text-align: center;
+    user-select: none;
+}
+
+.te-header-cell {
+    border: 1px solid #444;
+    padding: 4px;
+    font-weight: 600;
+    width: 60px;
+}
+
+.te-header-cell-row {
+    background: #2c313a;
+    color: #9da5b4;
+    border: 1px solid #444;
+    text-align: center;
+    font-size: 11px;
+    width: 30px;
+    user-select: none;
+}
+
+.te-corner-cell {
+    background: #2c313a;
+    border: 1px solid #444;
+    width: 30px;
+}

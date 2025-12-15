@@ -1,6 +1,7 @@
 import { state, setActivePane } from './state.js';
 import { createNewTab } from './tabs.js';
 import { hideDropZones } from './dom.js';
+import { updateOutline } from './outline.js';
 
 let currentRoot = null;
 let isCollapsed = false;
@@ -60,7 +61,7 @@ function renderNode(node) {
       // open file in active pane
       const file = await window.api.readFileAt(node.path);
       createNewTab(file.content, file.path, state.activePane);
-      
+
       // Update outline if it's a tex file
       if (node.path.endsWith('.tex')) {
         updateOutline(node.path);
@@ -122,10 +123,10 @@ export function toggleExplorer() {
   const pane = explorerPane();
   if (!pane) return;
   isCollapsed = !isCollapsed;
-  
+
   const reopenBtn = document.getElementById('explorer-reopen');
   const icon = reopenBtn?.querySelector('.material-icons');
-  
+
   if (isCollapsed) {
     pane.classList.add('collapsed');
     if (icon) icon.textContent = 'chevron_right';
@@ -137,11 +138,11 @@ export function toggleExplorer() {
 
 export function initExplorer() {
   if (explorerChangeBtn()) explorerChangeBtn().onclick = chooseFolderAndLoad;
-  
+
   // Toggle button (arrow that moves with pane)
   const reopenBtn = document.getElementById('explorer-reopen');
   if (reopenBtn) reopenBtn.onclick = toggleExplorer;
-  
+
   // Back to projects button
   const backBtn = document.getElementById('back-to-projects');
   if (backBtn) {
@@ -159,48 +160,7 @@ export function initExplorer() {
   });
 }
 
-/**
- * Update the outline view for a file
- */
-export async function updateOutline(filePath) {
-  const outlineTree = document.getElementById('outline-tree');
-  if (!outlineTree) return;
-  
-  outlineTree.innerHTML = '';
-  
-  if (!filePath || !filePath.endsWith('.tex')) {
-    outlineTree.innerHTML = '<div style="padding: 8px; color: var(--muted); font-size: 12px;">No outline available</div>';
-    return;
-  }
 
-  try {
-    const sections = await window.latexServices.getSections(filePath);
-    
-    if (!sections || sections.length === 0) {
-      outlineTree.innerHTML = '<div style="padding: 8px; color: var(--muted); font-size: 12px;">No sections found</div>';
-      return;
-    }
-
-    sections.forEach(section => {
-      const el = document.createElement('div');
-      el.className = `outline-node level-${section.level}`;
-      el.innerText = section.title;
-      el.title = section.title;
-      el.onclick = () => {
-        // Navigate to section
-        const activeEditor = state.editors[state.activePane];
-        if (activeEditor) {
-          activeEditor.revealLineInCenter(section.line);
-          activeEditor.setPosition({ lineNumber: section.line, column: 1 });
-          activeEditor.focus();
-        }
-      };
-      outlineTree.appendChild(el);
-    });
-  } catch (error) {
-    console.error('Error updating outline:', error);
-  }
-}
 
 /**
  * Show context menu
@@ -220,7 +180,7 @@ function showContextMenu(x, y, node) {
       e.stopPropagation();
       menu.style.display = 'none';
       const action = item.dataset.action;
-      
+
       switch (action) {
         case 'copy-path':
           await navigator.clipboard.writeText(node.path);

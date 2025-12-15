@@ -1,0 +1,121 @@
+/* Main Tabbar (Generic) */
+#tabbar {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--panel);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    overflow-x: auto;
+}
+
+.editor-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    background: var(--bg);
+    position: relative;
+}
+
+.tabbar-pane {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--panel);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    overflow-x: auto;
+}
+
+.editor-wrapper {
+    flex: 1;
+    position: relative;
+}
+
+.editor {
+    position: absolute;
+    inset: 0;
+    background: var(--bg);
+}
+
+.pdf-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: var(--bg);
+    z-index: 10;
+}
+
+.drop-zone {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 50%;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    background: rgba(97, 175, 239, 0.1);
+    border: 2px dashed var(--accent);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: var(--accent);
+    z-index: 1000;
+}
+
+#editor-pane-left .drop-zone {
+    right: 0;
+}
+
+#editor-pane-right .drop-zone {
+    left: 0;
+}
+
+.drop-zone::after {
+    content: 'Drop here to split screen';
+    font-weight: 500;
+}
+
+.drop-zone.active {
+    opacity: 1;
+    pointer-events: auto;
+    display: flex;
+}
+
+#split-divider {
+    width: 1px;
+    background: rgba(255, 255, 255, 0.04);
+    cursor: col-resize;
+}
+
+.tab {
+    padding: 8px 12px;
+    border-radius: 4px 4px 0 0;
+    background: transparent;
+    color: var(--fg);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    user-select: none;
+}
+
+.tab.active {
+    background: var(--tab-active-bg);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-bottom: none;
+}
+
+.tab.dragging {
+    opacity: 0.5;
+}
+
+.tab .close {
+    margin-left: 8px;
+    color: var(--muted);
+}
+
+#editor {
+    background: var(--bg);
+}

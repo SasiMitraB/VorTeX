@@ -2,7 +2,7 @@ import { state, newTabId, setActivePane } from './state.js';
 import { setPaneContent } from './paneContent.js';
 import { hideDropZones, setPdfPointerEvents } from './dom.js';
 import { detectLanguageFromPath } from './utils.js';
-import { updateOutline } from './explorer.js';
+import { updateOutline } from './outline.js';
 
 function makeTabElement(tab, pane) {
   const el = document.createElement('div');

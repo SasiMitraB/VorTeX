@@ -1,15 +1,13 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol } = require('electron');
 const path = require('path');
-const fs = require('fs').promises;
 const Store = require('electron-store');
 
-// LaTeX Services
-const FileWatcher = require('./src/services/FileWatcher');
-const semanticIndex = require('./src/services/SemanticIndex');
-const { searchLabels, searchBibEntries } = require('./src/services/FuzzyMatcher');
+// Modular imports
+const { createApplicationMenu } = require('./src/main/menu');
+const { registerIpcHandlers } = require('./src/main/ipc');
+const latexManager = require('./src/main/latexManager');
 
 const store = new Store();
-let fileWatcher = null;
 let mainWindow = null;
 
 // Register scheme as privileged
@@ -29,6 +27,9 @@ function createWindow() {
     }
   });
 
+  // Share window instance with LatexManager for events
+  latexManager.setMainWindow(mainWindow);
+
   // Check if we should show project selector or editor
   const projectsFolder = store.get('projectsFolder');
   const currentProject = store.get('currentProject');
@@ -41,13 +42,14 @@ function createWindow() {
     // Show editor and initialize file watching
     mainWindow.loadFile('index.html');
     if (currentProject) {
-      initializeLatexServices(currentProject);
+      latexManager.initialize(currentProject);
     }
   }
 }
 
 app.whenReady().then(() => {
-  createMenu();
+  createApplicationMenu(app, () => mainWindow);
+  registerIpcHandlers(ipcMain, dialog, store);
   createWindow();
 
   app.on('activate', function () {
@@ -59,381 +61,7 @@ app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
 });
 
-ipcMain.handle('dialog:openFiles', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile', 'multiSelections']
-  });
-  if (result.canceled) return [];
-  const files = await Promise.all(
-    result.filePaths.map(async (p) => ({ path: p, content: await fs.readFile(p, 'utf-8') }))
-  );
-  return files;
-});
-
-ipcMain.handle('dialog:openFolder', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory']
-  });
-  if (result.canceled || !result.filePaths.length) return null;
-  return result.filePaths[0];
-});
-
-ipcMain.handle('dialog:openCSV', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: [{ name: 'CSV Files', extensions: ['csv'] }]
-  });
-  if (result.canceled || !result.filePaths.length) return null;
-  const content = await fs.readFile(result.filePaths[0], 'utf-8');
-  return { path: result.filePaths[0], content };
-});
-
-async function buildTree(dirPath) {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  const children = await Promise.all(entries.map(async (entry) => {
-    const full = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      return {
-        name: entry.name,
-        path: full,
-        type: 'folder',
-        children: await buildTree(full)
-      };
-    }
-    return {
-      name: entry.name,
-      path: full,
-      type: 'file'
-    };
-  }));
-  return children.sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-}
-
-ipcMain.handle('fs:tree', async (event, rootPath) => {
-  if (!rootPath) return [];
-  return await buildTree(rootPath);
-});
-
-ipcMain.handle('fs:readFile', async (event, filePath) => {
-  const content = await fs.readFile(filePath, 'utf-8');
-  return { path: filePath, content };
-});
-
-ipcMain.handle('file:write', async (event, filePath, content) => {
-  await fs.writeFile(filePath, content, 'utf-8');
-  return { success: true };
-});
-
-ipcMain.handle('dialog:saveFile', async (event, defaultPath, content) => {
-  const res = await dialog.showSaveDialog({ defaultPath });
-  if (res.canceled || !res.filePath) return { canceled: true };
-  await fs.writeFile(res.filePath, content, 'utf-8');
-  return { canceled: false, filePath: res.filePath };
-});
-
-ipcMain.handle('config:get', async (event, key) => {
-  return store.get(key);
-});
-
-ipcMain.handle('config:set', async (event, key, value) => {
-  store.set(key, value);
-  return { success: true };
-});
-
-ipcMain.handle('projects:scan', async (event, projectsFolder) => {
-  if (!projectsFolder) return [];
-  try {
-    const entries = await fs.readdir(projectsFolder, { withFileTypes: true });
-    const projects = [];
-
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const projectPath = path.join(projectsFolder, entry.name);
-
-      // Find preview PDF (prefer main.pdf, fallback to any PDF)
-      let previewPdf = null;
-      try {
-        const files = await fs.readdir(projectPath);
-        const mainPdf = files.find(f => f.toLowerCase() === 'main.pdf');
-        if (mainPdf) {
-          previewPdf = path.join(projectPath, mainPdf);
-        } else {
-          const anyPdf = files.find(f => f.toLowerCase().endsWith('.pdf'));
-          if (anyPdf) previewPdf = path.join(projectPath, anyPdf);
-        }
-      } catch (err) {
-        // Ignore read errors for individual projects
-      }
-
-      projects.push({
-        name: entry.name,
-        path: projectPath,
-        previewPdf
-      });
-    }
-
-    return projects.sort((a, b) => a.name.localeCompare(b.name));
-  } catch (err) {
-    console.error('Error scanning projects:', err);
-    return [];
-  }
-});
-
-// ============================================
-// Menu Construction
-// ============================================
-function createMenu() {
-  const isMac = process.platform === 'darwin';
-
-  const template = [
-    // { role: 'appMenu' }
-    ...(isMac ? [{
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' }
-      ]
-    }] : []),
-    // { role: 'fileMenu' }
-    {
-      label: 'File',
-      submenu: [
-        { role: 'close' }
-      ]
-    },
-    // { role: 'editMenu' }
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'delete' },
-        { role: 'selectAll' }
-      ]
-    },
-    // { role: 'viewMenu' }
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' }
-      ]
-    },
-    // { Insert Menu }
-    {
-      label: 'Insert',
-      submenu: [
-        {
-          label: 'Insert Table',
-          accelerator: 'CmdOrCtrl+Shift+T',
-          click: async () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('menu:insert-table');
-            }
-          }
-        },
-        {
-          label: 'Insert Equation',
-          enabled: false // Placeholder
-        },
-        {
-          label: 'Insert Figure',
-          enabled: false // Placeholder
-        }
-      ]
-    },
-    // { role: 'windowMenu' }
-    {
-      label: 'Window',
-      submenu: [
-        { role: 'minimize' },
-        { role: 'zoom' },
-        ...(isMac ? [
-          { type: 'separator' },
-          { role: 'front' },
-          { type: 'separator' },
-          { role: 'window' }
-        ] : [
-          { role: 'close' }
-        ])
-      ]
-    }
-  ];
-
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
-}
-
-// ============================================
-// LaTeX Services Initialization & IPC Handlers
-// ============================================
-
-/**
- * Initialize LaTeX services for a project
- */
-async function initializeLatexServices(projectPath) {
-  try {
-    console.log('Initializing LaTeX services for:', projectPath);
-
-    // Initialize semantic index
-    await semanticIndex.initProject(projectPath);
-
-    // Create file watcher
-    fileWatcher = new FileWatcher();
-
-    // Listen for file changes
-    fileWatcher.on('file-change', async (event) => {
-      console.log('File change:', event.type, event.path);
-
-      if (event.type === 'deleted') {
-        semanticIndex.removeFile(event.path);
-      } else {
-        // Read file and update index
-        try {
-          const content = await fs.readFile(event.path, 'utf-8');
-          await semanticIndex.updateFile(event.path, content);
-        } catch (err) {
-          console.error('Error reading file for indexing:', err);
-        }
-      }
-
-      // Notify renderer
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('file-change', event);
-      }
-    });
-
-    fileWatcher.on('ready', async (files) => {
-      console.log(`File watcher ready with ${files.length} files`);
-
-      // Initial indexing of all files
-      await indexAllFiles(files);
-
-      // Notify renderer that index is ready
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('index-ready', semanticIndex.getStats());
-      }
-    });
-
-    // Start watching
-    await fileWatcher.watchProject(projectPath);
-  } catch (error) {
-    console.error('Error initializing LaTeX services:', error);
-  }
-}
-
-/**
- * Index all files in parallel
- */
-async function indexAllFiles(files) {
-  const BATCH_SIZE = 10;
-
-  for (let i = 0; i < files.length; i += BATCH_SIZE) {
-    const batch = files.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(async (filePath) => {
-      try {
-        const content = await fs.readFile(filePath, 'utf-8');
-        await semanticIndex.updateFile(filePath, content);
-      } catch (err) {
-        console.error(`Error indexing ${filePath}:`, err);
-      }
-    }));
-  }
-
-  console.log('Initial indexing complete:', semanticIndex.getStats());
-}
-
-/**
- * Stop LaTeX services
- */
-async function stopLatexServices() {
-  if (fileWatcher) {
-    await fileWatcher.stopWatching();
-    fileWatcher = null;
-  }
-  semanticIndex.clear();
-}
-
-// IPC: Get completion data (labels or citations)
-ipcMain.handle('latex:getCompletionData', async (event, type, currentFile) => {
-  try {
-    if (type === 'labels') {
-      return semanticIndex.getAllLabels();
-    } else if (type === 'citations') {
-      return semanticIndex.getAllCitations();
-    } else if (type === 'sections') {
-      return semanticIndex.getSectionsForFile(currentFile);
-    }
-    return [];
-  } catch (error) {
-    console.error('Error getting completion data:', error);
-    return [];
-  }
-});
-
-// IPC: Fuzzy search
-ipcMain.handle('latex:fuzzySearch', async (event, query, type, currentFile) => {
-  try {
-    if (type === 'labels') {
-      const labels = semanticIndex.getAllLabels();
-      return searchLabels(query, labels, currentFile);
-    } else if (type === 'citations') {
-      const citations = semanticIndex.getAllCitations();
-      return searchBibEntries(query, citations);
-    }
-    return [];
-  } catch (error) {
-    console.error('Error in fuzzy search:', error);
-    return [];
-  }
-});
-
-// IPC: Reindex a specific file
-ipcMain.handle('latex:reindexFile', async (event, filePath) => {
-  try {
-    const content = await fs.readFile(filePath, 'utf-8');
-    await semanticIndex.updateFile(filePath, content);
-    return { success: true, stats: semanticIndex.getStats() };
-  } catch (error) {
-    console.error('Error reindexing file:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// IPC: Get index stats
-ipcMain.handle('latex:getStats', async () => {
-  return semanticIndex.getStats();
-});
-
-// IPC: Initialize services for a project (called when switching projects)
-ipcMain.handle('latex:initProject', async (event, projectPath) => {
-  await stopLatexServices();
-  await initializeLatexServices(projectPath);
-  return { success: true };
-});
-
 // Clean up on app quit
 app.on('before-quit', async () => {
-  await stopLatexServices();
+  await latexManager.stop();
 });

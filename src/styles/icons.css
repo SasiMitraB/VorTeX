@@ -1,0 +1,55 @@
+/* File Icons Colors */
+.node-icon {
+    font-size: 16px;
+    color: var(--muted);
+    width: 18px;
+    display: inline-block;
+}
+
+.node-icon.folder {
+    color: #d19a66;
+}
+
+.node-icon.js {
+    color: #f1fa8c;
+}
+
+.node-icon.ts {
+    color: #61afef;
+}
+
+.node-icon.json {
+    color: #e5c07b;
+}
+
+.node-icon.md {
+    color: #98c379;
+}
+
+.node-icon.tex {
+    color: #c678dd;
+}
+
+.node-icon.bib {
+    color: #56b6c2;
+}
+
+.node-icon.py {
+    color: #3572a5;
+}
+
+.node-icon.html {
+    color: #e06c75;
+}
+
+.node-icon.css {
+    color: #56b6c2;
+}
+
+.node-icon.pdf {
+    color: #e06c75;
+}
+
+.node-icon.default {
+    color: #abb2bf;
+}
