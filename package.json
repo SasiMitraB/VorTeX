@@ -1,0 +1,15 @@
+{
+  "name": "vortex-mini-editor",
+  "version": "0.1.0",
+  "description": "Minimal Monaco + Electron text editor with tabs",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^26.0.0"
+  }
+}
