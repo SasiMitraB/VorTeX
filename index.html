@@ -17,33 +17,44 @@
     <script src="https://unpkg.com/material-components-web@14.0.0/dist/material-components-web.min.js"></script>
   </head>
   <body>
-    <div id="toolbar" class="mdc-top-app-bar__row">
-      <div class="mdc-top-app-bar__section mdc-top-app-bar__section--align-start">
-        <button class="mdc-button mdc-button--raised" id="openBtn"><span class="material-icons">folder_open</span>&nbsp;Open</button>
-        <button class="mdc-button mdc-button--raised" id="saveBtn"><span class="material-icons">save</span>&nbsp;Save</button>
-        <button class="mdc-button mdc-button--raised" id="saveAsBtn"><span class="material-icons">save_alt</span>&nbsp;Save As</button>
-        <button class="mdc-button mdc-button--outlined" id="newBtn"><span class="material-icons">note_add</span>&nbsp;New</button>
-      </div>
-    </div>
-
-    <nav id="tabbar" class="mdc-tab-bar" role="tablist"></nav>
-
-    <div id="split-container" style="display: flex; height: calc(100vh - 90px);">
-      <div id="editor-pane-left" class="editor-pane">
-        <nav id="tabbar-left" class="mdc-tab-bar tabbar-pane" role="tablist"></nav>
-        <div class="editor-wrapper">
-          <div id="editor-left" class="editor"></div>
-          <iframe id="pdf-frame-left" class="pdf-frame" title="PDF preview" style="display: none;"></iframe>
-          <div class="drop-zone" data-target="left"></div>
+    <div id="main-layout">
+      <aside id="explorer-pane" class="collapsed">
+        <div class="explorer-header">
+          <div class="explorer-title">Explorer</div>
+          <div class="explorer-actions">
+            <button id="back-to-projects" class="icon-btn" title="Back to projects">
+              <span class="material-icons">apps</span>
+            </button>
+            <button id="explorer-change" class="icon-btn" title="Change folder">↻</button>
+          </div>
         </div>
-      </div>
-      <div id="split-divider" style="width: 1px; background: rgba(255,255,255,0.04); cursor: col-resize;"></div>
-      <div id="editor-pane-right" class="editor-pane" style="display: none;">
-        <nav id="tabbar-right" class="mdc-tab-bar tabbar-pane" role="tablist"></nav>
-        <div class="editor-wrapper">
-          <div id="editor-right" class="editor"></div>
-          <iframe id="pdf-frame-right" class="pdf-frame" title="PDF preview" style="display: none;"></iframe>
-          <div class="drop-zone" data-target="right"></div>
+        <div id="explorer-root" class="explorer-root-label">No folder</div>
+        <div id="explorer-tree" class="explorer-tree"></div>
+      </aside>
+
+      <button id="explorer-reopen" class="explorer-reopen-btn" title="Open explorer">
+        <span class="material-icons">chevron_right</span>
+      </button>
+
+      <div id="editor-area">
+        <div id="split-container">
+          <div id="editor-pane-left" class="editor-pane">
+            <nav id="tabbar-left" class="mdc-tab-bar tabbar-pane" role="tablist"></nav>
+            <div class="editor-wrapper">
+              <div id="editor-left" class="editor"></div>
+              <iframe id="pdf-frame-left" class="pdf-frame" title="PDF preview" style="display: none;"></iframe>
+              <div class="drop-zone" data-target="left"></div>
+            </div>
+          </div>
+          <div id="split-divider"></div>
+          <div id="editor-pane-right" class="editor-pane" style="display: none;">
+            <nav id="tabbar-right" class="mdc-tab-bar tabbar-pane" role="tablist"></nav>
+            <div class="editor-wrapper">
+              <div id="editor-right" class="editor"></div>
+              <iframe id="pdf-frame-right" class="pdf-frame" title="PDF preview" style="display: none;"></iframe>
+              <div class="drop-zone" data-target="right"></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

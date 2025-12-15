@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VorTeX - Select Project</title>
+    <link rel="stylesheet" href="project-selector.css" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  </head>
+  <body>
+    <div class="selector-container">
+      <header class="selector-header">
+        <h1 class="selector-title">VorTeX</h1>
+        <p class="selector-subtitle">Select a LaTeX project to open</p>
+        <div class="header-actions">
+          <button id="change-projects-folder" class="secondary-btn">
+            <span class="material-icons">folder_open</span>
+            Change Projects Folder
+          </button>
+        </div>
+      </header>
+
+      <div class="projects-folder-label">
+        <span class="material-icons">folder</span>
+        <span id="projects-folder-path">Loading...</span>
+      </div>
+
+      <div id="projects-grid" class="projects-grid">
+        <!-- Projects will be inserted here -->
+      </div>
+
+      <div id="no-projects" class="no-projects" style="display: none;">
+        <span class="material-icons">folder_off</span>
+        <p>No projects found in the selected folder</p>
+        <button id="choose-different-folder" class="primary-btn">Choose Different Folder</button>
+      </div>
+
+      <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p>Loading projects...</p>
+      </div>
+    </div>
+
+    <script type="module" src="project-selector.js"></script>
+  </body>
+</html>

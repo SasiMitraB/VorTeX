@@ -18,6 +18,7 @@ npm start
 
 ## Features (current)
 
+- **Folder explorer:** choose a folder on startup; collapsible tree on the left (toggle/hide) with folders/files; click a file to open it.
 - **Split panes with tab pools:** drag any tab between left/right panes; each pane keeps its own tabs. Close all tabs in a pane to hide it.
 - **PDF viewing:** opening a `.pdf` renders it inline (per-pane iframe) while text files use Monaco.
 - **Drag-and-drop tabs:** works across panes for both text and PDF tabs; drop zones stay inside the editor area.
@@ -37,6 +38,13 @@ npm start
 - `src/dragDrop.js` — drag/drop zones, tab movement between panes
 - `src/dom.js` — DOM helpers (drop zones, PDF pointer toggles)
 - `src/utils.js` — language detection
+- `src/explorer.js` — folder picker and collapsible tree rendering
+
+## Explorer usage
+
+- On launch you'll be prompted to pick a folder (or use the “Open Folder” button in the toolbar).
+- The Explorer pane can be toggled with the “Explorer” button or the × in its header.
+- Click folders to expand/collapse; click files to open them in the active pane.
 
 ## Usage notes
 

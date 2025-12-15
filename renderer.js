@@ -1,14 +1,27 @@
+console.log('Renderer script loading...');
+
 import { state, setActivePane } from './src/state.js';
 import { initMonaco } from './src/monacoSetup.js';
 import { hideDropZones } from './src/dom.js';
 import { setupDropZones, setupGlobalDragHandlers } from './src/dragDrop.js';
 import { createNewTab, openFiles, saveActive, saveAsActive } from './src/tabs.js';
+import { initExplorer, chooseFolderAndLoad, toggleExplorer } from './src/explorer.js';
+
+console.log('All imports loaded successfully');
 
 function setupButtons() {
-  document.getElementById('openBtn').onclick = openFiles;
-  document.getElementById('newBtn').onclick = () => createNewTab();
-  document.getElementById('saveBtn').onclick = saveActive;
-  document.getElementById('saveAsBtn').onclick = saveAsActive;
+  const openBtn = document.getElementById('openBtn');
+  if (openBtn) openBtn.onclick = openFiles;
+  const newBtn = document.getElementById('newBtn');
+  if (newBtn) newBtn.onclick = () => createNewTab();
+  const saveBtn = document.getElementById('saveBtn');
+  if (saveBtn) saveBtn.onclick = saveActive;
+  const saveAsBtn = document.getElementById('saveAsBtn');
+  if (saveAsBtn) saveAsBtn.onclick = saveAsActive;
+  const openFolderBtn = document.getElementById('openFolderBtn');
+  if (openFolderBtn) openFolderBtn.onclick = chooseFolderAndLoad;
+  const toggleExplorerBtn = document.getElementById('toggleExplorerBtn');
+  if (toggleExplorerBtn) toggleExplorerBtn.onclick = toggleExplorer;
 }
 
 function setupKeyboardShortcuts() {
@@ -46,6 +59,15 @@ async function bootstrap() {
   setupPaneClickFocus();
   setupDropZones();
   setupGlobalDragHandlers();
+  initExplorer();
+
+  // Load the current project folder automatically
+  const currentProject = await window.api.configGet('currentProject');
+  if (currentProject) {
+    console.log('Loading project:', currentProject);
+    const { loadFolder } = await import('./src/explorer.js');
+    await loadFolder(currentProject);
+  }
 
   try {
     if (window.mdc && window.mdc.ripple) {
@@ -57,3 +79,5 @@ async function bootstrap() {
 }
 
 window.addEventListener('DOMContentLoaded', bootstrap);
+
+console.log('Renderer script loaded');

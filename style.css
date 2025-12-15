@@ -14,14 +14,6 @@ body {
   color: var(--fg);
 }
 
-#toolbar {
-  display: flex;
-  gap: 8px;
-  padding: 12px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-}
-
 #tabbar {
   display: flex;
   gap: 4px;
@@ -31,8 +23,194 @@ body {
   overflow-x: auto;
 }
 
+#main-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#explorer-pane {
+  width: 260px;
+  background: #1d2026;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.2s ease;
+  overflow: hidden;
+}
+
+#explorer-pane.collapsed {
+  width: 0;
+  border-right: none;
+  pointer-events: none;
+}
+
+#explorer-pane.collapsed .explorer-header,
+#explorer-pane.collapsed .explorer-root-label,
+#explorer-pane.collapsed .explorer-tree {
+  display: none;
+}
+
+.explorer-reopen-btn {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 64px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: all 0.2s;
+  z-index: 1000;
+}
+
+.explorer-reopen-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--accent);
+  width: 36px;
+}
+
+.explorer-reopen-btn .material-icons {
+  font-size: 20px;
+}
+
+#explorer-pane:not(.collapsed) ~ .explorer-reopen-btn {
+  left: 260px;
+}
+
+.explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.explorer-title {
+  font-weight: 600;
+}
+
+.explorer-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--fg);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.icon-btn:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.explorer-root-label {
+  padding: 8px 12px;
+  color: var(--muted);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.explorer-tree {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 6px 12px;
+}
+
+.tree-root {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.tree-node {
+  list-style: none;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tree-row:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.tree-node.file .caret {
+  opacity: 0;
+}
+
+.caret {
+  width: 12px;
+  display: inline-block;
+  color: var(--muted);
+}
+
+.caret.spacer {
+  opacity: 0;
+}
+
+.node-icon {
+  font-size: 16px;
+  color: var(--muted);
+  width: 18px;
+  display: inline-block;
+}
+
+.label {
+  color: var(--fg);
+  user-select: none;
+}
+
+.tree-node.folder > .tree-row .caret {
+  transition: transform 0.15s ease;
+}
+
+.tree-node.folder.collapsed > .tree-row .caret {
+  transform: rotate(0deg);
+}
+
+.tree-node.folder:not(.collapsed) > .tree-row .caret {
+  transform: rotate(90deg);
+}
+
+.tree-node.folder > .children {
+  list-style: none;
+  padding-left: 14px;
+  margin: 0;
+  display: block;
+}
+
+.tree-node.folder.collapsed > .children {
+  display: none;
+}
+
+#editor-area {
+  flex: 1;
+  display: flex;
+}
+
 #split-container {
   display: flex;
+  width: 100%;
 }
 
 .editor-pane {
