@@ -3,10 +3,17 @@ const path = require('path');
 const fs = require('fs').promises;
 const Store = require('electron-store');
 
+// LaTeX Services
+const FileWatcher = require('./src/services/FileWatcher');
+const semanticIndex = require('./src/services/SemanticIndex');
+const { searchLabels, searchBibEntries } = require('./src/services/FuzzyMatcher');
+
 const store = new Store();
+let fileWatcher = null;
+let mainWindow = null;
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
     webPreferences: {
@@ -23,10 +30,11 @@ function createWindow() {
   
   if (!projectsFolder || !currentProject) {
     // Show project selector
-    win.loadFile('project-selector.html');
+    mainWindow.loadFile('project-selector.html');
   } else {
-    // Show editor
-    win.loadFile('index.html');
+    // Show editor and initialize file watching
+    mainWindow.loadFile('index.html');
+    initializeLatexServices(currentProject);
   }
 }
 
@@ -153,4 +161,157 @@ ipcMain.handle('projects:scan', async (event, projectsFolder) => {
     console.error('Error scanning projects:', err);
     return [];
   }
+});
+
+// ============================================
+// LaTeX Services Initialization & IPC Handlers
+// ============================================
+
+/**
+ * Initialize LaTeX services for a project
+ */
+async function initializeLatexServices(projectPath) {
+  try {
+    console.log('Initializing LaTeX services for:', projectPath);
+    
+    // Initialize semantic index
+    await semanticIndex.initProject(projectPath);
+    
+    // Create file watcher
+    fileWatcher = new FileWatcher();
+    
+    // Listen for file changes
+    fileWatcher.on('file-change', async (event) => {
+      console.log('File change:', event.type, event.path);
+      
+      if (event.type === 'deleted') {
+        semanticIndex.removeFile(event.path);
+      } else {
+        // Read file and update index
+        try {
+          const content = await fs.readFile(event.path, 'utf-8');
+          await semanticIndex.updateFile(event.path, content);
+        } catch (err) {
+          console.error('Error reading file for indexing:', err);
+        }
+      }
+      
+      // Notify renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('file-change', event);
+      }
+    });
+    
+    fileWatcher.on('ready', async (files) => {
+      console.log(`File watcher ready with ${files.length} files`);
+      
+      // Initial indexing of all files
+      await indexAllFiles(files);
+      
+      // Notify renderer that index is ready
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('index-ready', semanticIndex.getStats());
+      }
+    });
+    
+    // Start watching
+    await fileWatcher.watchProject(projectPath);
+  } catch (error) {
+    console.error('Error initializing LaTeX services:', error);
+  }
+}
+
+/**
+ * Index all files in parallel
+ */
+async function indexAllFiles(files) {
+  const BATCH_SIZE = 10;
+  
+  for (let i = 0; i < files.length; i += BATCH_SIZE) {
+    const batch = files.slice(i, i + BATCH_SIZE);
+    await Promise.all(batch.map(async (filePath) => {
+      try {
+        const content = await fs.readFile(filePath, 'utf-8');
+        await semanticIndex.updateFile(filePath, content);
+      } catch (err) {
+        console.error(`Error indexing ${filePath}:`, err);
+      }
+    }));
+  }
+  
+  console.log('Initial indexing complete:', semanticIndex.getStats());
+}
+
+/**
+ * Stop LaTeX services
+ */
+async function stopLatexServices() {
+  if (fileWatcher) {
+    await fileWatcher.stopWatching();
+    fileWatcher = null;
+  }
+  semanticIndex.clear();
+}
+
+// IPC: Get completion data (labels or citations)
+ipcMain.handle('latex:getCompletionData', async (event, type, currentFile) => {
+  try {
+    if (type === 'labels') {
+      return semanticIndex.getAllLabels();
+    } else if (type === 'citations') {
+      return semanticIndex.getAllCitations();
+    } else if (type === 'sections') {
+      return semanticIndex.getSectionsForFile(currentFile);
+    }
+    return [];
+  } catch (error) {
+    console.error('Error getting completion data:', error);
+    return [];
+  }
+});
+
+// IPC: Fuzzy search
+ipcMain.handle('latex:fuzzySearch', async (event, query, type, currentFile) => {
+  try {
+    if (type === 'labels') {
+      const labels = semanticIndex.getAllLabels();
+      return searchLabels(query, labels, currentFile);
+    } else if (type === 'citations') {
+      const citations = semanticIndex.getAllCitations();
+      return searchBibEntries(query, citations);
+    }
+    return [];
+  } catch (error) {
+    console.error('Error in fuzzy search:', error);
+    return [];
+  }
+});
+
+// IPC: Reindex a specific file
+ipcMain.handle('latex:reindexFile', async (event, filePath) => {
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    await semanticIndex.updateFile(filePath, content);
+    return { success: true, stats: semanticIndex.getStats() };
+  } catch (error) {
+    console.error('Error reindexing file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC: Get index stats
+ipcMain.handle('latex:getStats', async () => {
+  return semanticIndex.getStats();
+});
+
+// IPC: Initialize services for a project (called when switching projects)
+ipcMain.handle('latex:initProject', async (event, projectPath) => {
+  await stopLatexServices();
+  await initializeLatexServices(projectPath);
+  return { success: true };
+});
+
+// Clean up on app quit
+app.on('before-quit', async () => {
+  await stopLatexServices();
 });

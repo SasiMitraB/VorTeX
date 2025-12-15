@@ -30,6 +30,11 @@
         </div>
         <div id="explorer-root" class="explorer-root-label">No folder</div>
         <div id="explorer-tree" class="explorer-tree"></div>
+        
+        <div class="outline-pane">
+          <div class="outline-header">Outline</div>
+          <div id="outline-tree" class="outline-tree"></div>
+        </div>
       </aside>
 
       <button id="explorer-reopen" class="explorer-reopen-btn" title="Open explorer">
@@ -60,5 +65,17 @@
     </div>
 
     <script type="module" src="renderer.js"></script>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu" style="display: none;">
+      <div class="menu-item" data-action="cut">Cut</div>
+      <div class="menu-item" data-action="copy">Copy</div>
+      <div class="menu-item" data-action="delete">Delete</div>
+      <div class="menu-separator"></div>
+      <div class="menu-item" data-action="copy-path">Copy Path</div>
+      <div class="menu-item" data-action="copy-relative-path">Copy Relative Path</div>
+      <div class="menu-separator"></div>
+      <div class="menu-item" data-action="rename">Rename</div>
+    </div>
   </body>
 </html>

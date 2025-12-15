@@ -1,7 +1,7 @@
 console.log('Renderer script loading...');
 
 import { state, setActivePane } from './src/state.js';
-import { initMonaco } from './src/monacoSetup.js';
+import { initMonaco, disposeCompletionProvider } from './src/monacoSetup.js';
 import { hideDropZones } from './src/dom.js';
 import { setupDropZones, setupGlobalDragHandlers } from './src/dragDrop.js';
 import { createNewTab, openFiles, saveActive, saveAsActive } from './src/tabs.js';
@@ -67,6 +67,9 @@ async function bootstrap() {
     console.log('Loading project:', currentProject);
     const { loadFolder } = await import('./src/explorer.js');
     await loadFolder(currentProject);
+    
+    // Initialize LaTeX services subscription
+    initLatexServicesListeners();
   }
 
   try {
@@ -76,6 +79,39 @@ async function bootstrap() {
   } catch (e) {
     // ignore if MDC not loaded
   }
+}
+
+/**
+ * Initialize listeners for LaTeX services events
+ */
+function initLatexServicesListeners() {
+  if (!window.latexServices) {
+    console.warn('LaTeX services not available');
+    return;
+  }
+
+  // Listen for file changes from the file watcher
+  window.latexServices.onFileChange((event) => {
+    console.log('File change event:', event.type, event.path);
+    // The main process handles the indexing automatically
+    // This is just for UI updates if needed
+  });
+
+  // Listen for index ready event
+  window.latexServices.onIndexReady((stats) => {
+    console.log('Semantic index ready:', stats);
+    // Could show a status indicator here
+  });
+}
+
+/**
+ * Clean up LaTeX services when switching projects
+ */
+function cleanupLatexServices() {
+  if (window.latexServices) {
+    window.latexServices.removeAllListeners();
+  }
+  disposeCompletionProvider();
 }
 
 window.addEventListener('DOMContentLoaded', bootstrap);

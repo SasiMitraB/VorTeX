@@ -2,6 +2,7 @@ import { state, newTabId, setActivePane } from './state.js';
 import { setPaneContent } from './paneContent.js';
 import { hideDropZones, setPdfPointerEvents } from './dom.js';
 import { detectLanguageFromPath } from './utils.js';
+import { updateOutline } from './explorer.js';
 
 function makeTabElement(tab, pane) {
   const el = document.createElement('div');
@@ -58,6 +59,14 @@ export function switchTab(id, pane = state.activePane) {
   if (state.editors[pane] && tab.type !== 'pdf') {
     state.editors[pane].focus();
   }
+  
+  // Update outline if it's a tex file
+  if (tab.path && tab.path.endsWith('.tex')) {
+    updateOutline(tab.path);
+  } else {
+    updateOutline(null);
+  }
+
   renderTabs('left');
   renderTabs('right');
 }

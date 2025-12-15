@@ -34,7 +34,8 @@ function renderNode(node) {
   row.appendChild(caret);
 
   const icon = document.createElement('span');
-  icon.className = 'node-icon material-icons';
+  const ext = node.type === 'folder' ? 'folder' : (node.name.split('.').pop() || '').toLowerCase();
+  icon.className = `node-icon material-icons ${ext}`;
   icon.innerText = iconForNode(node);
   row.appendChild(icon);
 
@@ -42,6 +43,13 @@ function renderNode(node) {
   label.className = 'label';
   label.innerText = node.name;
   row.appendChild(label);
+
+  // Context Menu
+  row.oncontextmenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showContextMenu(e.clientX, e.clientY, node);
+  };
 
   row.onclick = async (e) => {
     e.stopPropagation();
@@ -52,6 +60,11 @@ function renderNode(node) {
       // open file in active pane
       const file = await window.api.readFileAt(node.path);
       createNewTab(file.content, file.path, state.activePane);
+      
+      // Update outline if it's a tex file
+      if (node.path.endsWith('.tex')) {
+        updateOutline(node.path);
+      }
     }
   };
 
@@ -138,4 +151,100 @@ export function initExplorer() {
       window.location.href = 'project-selector.html';
     };
   }
+
+  // Hide context menu on click elsewhere
+  document.addEventListener('click', () => {
+    const menu = document.getElementById('context-menu');
+    if (menu) menu.style.display = 'none';
+  });
+}
+
+/**
+ * Update the outline view for a file
+ */
+export async function updateOutline(filePath) {
+  const outlineTree = document.getElementById('outline-tree');
+  if (!outlineTree) return;
+  
+  outlineTree.innerHTML = '';
+  
+  if (!filePath || !filePath.endsWith('.tex')) {
+    outlineTree.innerHTML = '<div style="padding: 8px; color: var(--muted); font-size: 12px;">No outline available</div>';
+    return;
+  }
+
+  try {
+    const sections = await window.latexServices.getSections(filePath);
+    
+    if (!sections || sections.length === 0) {
+      outlineTree.innerHTML = '<div style="padding: 8px; color: var(--muted); font-size: 12px;">No sections found</div>';
+      return;
+    }
+
+    sections.forEach(section => {
+      const el = document.createElement('div');
+      el.className = `outline-node level-${section.level}`;
+      el.innerText = section.title;
+      el.title = section.title;
+      el.onclick = () => {
+        // Navigate to section
+        const activeEditor = state.editors[state.activePane];
+        if (activeEditor) {
+          activeEditor.revealLineInCenter(section.line);
+          activeEditor.setPosition({ lineNumber: section.line, column: 1 });
+          activeEditor.focus();
+        }
+      };
+      outlineTree.appendChild(el);
+    });
+  } catch (error) {
+    console.error('Error updating outline:', error);
+  }
+}
+
+/**
+ * Show context menu
+ */
+function showContextMenu(x, y, node) {
+  const menu = document.getElementById('context-menu');
+  if (!menu) return;
+
+  menu.style.display = 'block';
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+
+  // Setup actions
+  const items = menu.querySelectorAll('.menu-item');
+  items.forEach(item => {
+    item.onclick = async (e) => {
+      e.stopPropagation();
+      menu.style.display = 'none';
+      const action = item.dataset.action;
+      
+      switch (action) {
+        case 'copy-path':
+          await navigator.clipboard.writeText(node.path);
+          break;
+        case 'copy-relative-path':
+          // Assuming currentRoot is the project root
+          const relPath = node.path.replace(currentRoot, '').replace(/^\//, '');
+          await navigator.clipboard.writeText(relPath);
+          break;
+        case 'delete':
+          if (confirm(`Are you sure you want to delete ${node.name}?`)) {
+            // Implement delete logic via API (needs to be added to preload/main)
+            console.log('Delete not implemented yet');
+          }
+          break;
+        case 'rename':
+          const newName = prompt('Enter new name:', node.name);
+          if (newName && newName !== node.name) {
+            // Implement rename logic via API
+            console.log('Rename not implemented yet');
+          }
+          break;
+        // Cut/Copy would require clipboard state management
+      }
+    };
+  });
 }
