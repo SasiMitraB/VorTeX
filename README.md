@@ -1,75 +1,89 @@
 # VorTeX
 
-A modern, minimal Electron editor that feels current—not 20 years old. Built around Monaco, with split panes, tab dragging, and PDF preview.
+A high-performance, GPU-accelerated LaTeX editor built natively in **Rust** with **GPUI**.
 
-## Getting started
+---
 
-1) Install dependencies
+## Highlights
 
+- **100% Native Rust Architecture**: Zero Node.js or Electron dependencies. Single self-contained native binary.
+- **GPU-Accelerated Rendering**: 120+ FPS rendering powered by GPUI.
+- **In-Process Semantic Indexing**: Real-time background AST parsing, label indexing, citation tracking, and section hierarchy mapping.
+- **Smart LaTeX Editing & Autocomplete**:
+  - **Environments**: Type `\begin{` to get instant multi-line environment templates (`figure`, `table`, `equation`, `align`, `itemize`, `enumerate`, `matrix`, etc.).
+  - **References & Citations**: Instant fuzzy suggestions for `\ref{...}`, `\eqref{...}`, `\cite{...}`, and `\citep{...}`.
+  - **Commands & Math**: Fast auto-closing delimiters (`$`, `(`, `{`, `[`), Unicode math auto-replacements (`\rightarrow`, `\alpha`, `\sum`, `\int`), and smart itemization (`\item`).
+- **Split Panes & Tab Pools**: Multi-pane editing with split views and PDF preview integration.
+- **Native OS File Watcher**: Incremental kernel-level file monitoring (`FSEvents` on macOS).
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+Ensure you have Rust and Cargo installed:
 ```bash
-npm install
+source "$HOME/.cargo/env"
 ```
 
-2) Run the app
+### Running the App
 
 ```bash
-npm start
+cargo run
 ```
 
-## Features (current)
+### Running Tests
 
-- **Folder explorer:** choose a folder on startup; collapsible tree on the left (toggle/hide) with folders/files; click a file to open it.
-- **Enhanced Explorer:**
-    - Context menu (Right-click) for file operations (New File, Rename, Delete).
-    - File icons based on extension.
-    - Outline view for LaTeX files (shows sections/subsections).
-- **Split panes with tab pools:** drag any tab between left/right panes; each pane keeps its own tabs. Close all tabs in a pane to hide it.
-- **PDF viewing:** opening a `.pdf` renders it inline (per-pane iframe) while text files use Monaco.
-- **Drag-and-drop tabs:** works across panes for both text and PDF tabs; drop zones stay inside the editor area.
-- **Dark theme:** Atom One Dark-inspired Monaco theme.
-- **Language support:** basic highlighting for LaTeX (`.tex`) and BibTeX (`.bib`) plus common web/dev languages.
-- **Smart LaTeX Editing:**
-    - **Auto-completion:** References (`\ref`), citations (`\cite`), environments (`\begin`), and commands.
-    - **Smart Labels:** Auto-suggests labels based on context (e.g., `eq:` for equations, `fig:` for figures).
-    - **Auto-itemization:** Pressing Enter in a list environment (`itemize`, `enumerate`) automatically inserts `\item`.
-    - **Math Support:** Auto-closing `$` delimiters and Unicode symbol picker (trigger with `\` in math mode).
-    - **File Paths:** Auto-complete paths in `\input`, `\include`, `\includegraphics`.
-    - **Smart Braces:** Auto-closing braces for commands like `\section`, `\ref`.
-- **Material UI:** toolbar/buttons styled with MDC Web.
+```bash
+cargo test
+```
 
-## Project structure
+### Building for Release
 
-- `index.html` — shell, toolbar, split layout, loads modules (type=module)
-- `style.css` — layout, tabs, split panes, drop-zone and PDF iframe styling
-- `renderer.js` — entry point wiring everything together
-- `src/state.js` — shared state (monaco instance, panes, tabs)
-- `src/monacoSetup.js` — Monaco init, orchestrates editor modules
-- `src/editor/` — Modular editor logic:
-    - `theme.js` — Editor theme definition
-    - `languages.js` — Language configuration
-    - `completionProvider.js` — Auto-completion logic
-    - `snippetManager.js` — Custom keybindings and snippets
-    - `completions/` — Specific completion providers (refs, envs, commands, files)
-- `src/services/` — Backend services:
-    - `BibtexParser.js` — Parses .bib files
-    - `LatexParser.js` — Parses .tex files for structure and labels
-    - `SemanticIndex.js` — Indexes project content for auto-completion
-    - `FileWatcher.js` — Watches for file changes
-- `src/tabs.js` — tab creation/rendering, switching, close/open/save logic
-- `src/paneContent.js` — per-pane content swapping between Monaco and PDF iframe
-- `src/dragDrop.js` — drag/drop zones, tab movement between panes
-- `src/dom.js` — DOM helpers (drop zones, PDF pointer toggles)
-- `src/utils.js` — language detection
-- `src/explorer.js` — folder picker and collapsible tree rendering
+```bash
+cargo build --release
+```
 
-## Explorer usage
+---
 
-- On launch you'll be prompted to pick a folder (or use the “Open Folder” button in the toolbar).
-- The Explorer pane can be toggled with the “Explorer” button or the × in its header.
-- Click folders to expand/collapse; click files to open them in the active pane.
+## Project Structure
 
-## Usage notes
+```
+├── Cargo.toml            # Rust crate manifest & dependencies
+├── src_rust/
+│   ├── main.rs           # Application entry point & GPUI window setup
+│   ├── lib.rs            # Library root exposing backend, services, state, views
+│   ├── backend.rs        # In-process BackendClient orchestrator
+│   ├── state.rs          # App state, tabs, panes, and project data models
+│   ├── theme.rs          # UI design system & color palettes
+│   ├── services/         # Native service layer
+│   │   ├── latex_parser.rs   # LaTeX AST & semantic element extraction
+│   │   ├── bibtex_parser.rs  # BibTeX parser & accent decoder
+│   │   ├── fuzzy_matcher.rs  # Skim-based fuzzy search with active-file boosting
+│   │   ├── file_watcher.rs   # OS kernel file system event monitor
+│   │   ├── semantic_index.rs # Thread-safe in-memory semantic index with disk caching
+│   │   └── fs_utils.rs       # Recursive tree builder, project scanner, and config store
+│   └── views/            # GPUI UI Components
+│       ├── editor/           # LaTeX editor with syntax highlighting & autocomplete
+│       ├── pdf_preview.rs    # PDF preview panel
+│       ├── project_selector.rs # Recent projects and project browser
+│       ├── sidebar.rs        # File tree & section outline
+│       ├── status_bar.rs     # Index status & document metadata
+│       ├── table_editor.rs   # Interactive LaTeX table editor modal
+│       ├── tabs.rs           # Tab bar with drag & drop
+│       └── workspace.rs      # Workspace toolbar and split pane layout
+└── tests/                # Native Rust integration test suite
+    ├── backend_client_test.rs
+    ├── bibtex_parser_test.rs
+    ├── editor_completion_test.rs
+    ├── fuzzy_matcher_test.rs
+    ├── latex_parser_test.rs
+    └── semantic_index_test.rs
+```
 
-- Start empty: no tab opens by default; open/create files as needed.
-- PDFs are read-only in this view; Save/Save As is skipped for them.
-- Dragging a tab over a pane shows an overlay within the editor area; drop to move/split.
+---
+
+## License
+
+MIT
