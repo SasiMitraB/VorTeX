@@ -1,6 +1,6 @@
 use crate::services::bibtex_parser::{parse_bib_file, BibEntryItem};
 use crate::services::latex_parser::{
-    parse_latex_file, BibRef, CitationItem, LabelItem, RefItem, SectionItem, TodoItem,
+    parse_latex_file, BibRef, CitationItem, LabelItem, RefItem, SectionItem, TableItem, TodoItem,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -33,6 +33,8 @@ pub struct DiskIndexData {
     pub sections: Vec<(String, Vec<SectionItem>)>,
     #[serde(default)]
     pub todos: Vec<(String, Vec<TodoItem>)>,
+    #[serde(default)]
+    pub tables: Vec<(String, Vec<TableItem>)>,
     pub bibliographies: Vec<BibRef>,
     pub file_hashes: Vec<(String, String)>,
 }
@@ -45,6 +47,7 @@ pub struct SemanticIndexInner {
     pub refs: HashMap<String, Vec<RefItem>>,
     pub sections: HashMap<String, Vec<SectionItem>>,
     pub todos: HashMap<String, Vec<TodoItem>>,
+    pub tables: HashMap<String, Vec<TableItem>>,
     pub bibliographies: Vec<BibRef>,
     pub file_hashes: HashMap<String, String>,
     pub current_project: Option<String>,
@@ -170,6 +173,9 @@ impl SemanticIndex {
             if !parsed.todos.is_empty() {
                 write.todos.insert(file_path.to_string(), parsed.todos);
             }
+            if !parsed.tables.is_empty() {
+                write.tables.insert(file_path.to_string(), parsed.tables);
+            }
             let mut bibs_to_load = Vec::new();
             for bib in &parsed.bibliographies {
                 if !write
@@ -233,6 +239,7 @@ impl SemanticIndex {
         inner.refs.remove(file_path);
         inner.sections.remove(file_path);
         inner.todos.remove(file_path);
+        inner.tables.remove(file_path);
         inner.bibliographies.retain(|b| b.source_file != file_path);
     }
 
@@ -315,6 +322,21 @@ impl SemanticIndex {
         read.todos.get(file_path).cloned().unwrap_or_default()
     }
 
+    pub fn get_all_tables(&self) -> Vec<TableItem> {
+        let read = self.inner.read().unwrap();
+        let mut all = Vec::new();
+        for list in read.tables.values() {
+            all.extend(list.clone());
+        }
+        all.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+        all
+    }
+
+    pub fn get_tables_for_file(&self, file_path: &str) -> Vec<TableItem> {
+        let read = self.inner.read().unwrap();
+        read.tables.get(file_path).cloned().unwrap_or_default()
+    }
+
     pub fn get_stats(&self) -> IndexStats {
         let read = self.inner.read().unwrap();
         IndexStats {
@@ -333,6 +355,7 @@ impl SemanticIndex {
         write.refs.clear();
         write.sections.clear();
         write.todos.clear();
+        write.tables.clear();
         write.bibliographies.clear();
         write.file_hashes.clear();
         write.current_project = None;
@@ -360,6 +383,7 @@ impl SemanticIndex {
                 refs: read.refs.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
                 sections: read.sections.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
                 todos: read.todos.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                tables: read.tables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
                 bibliographies: read.bibliographies.clone(),
                 file_hashes: read.file_hashes.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             };
@@ -382,6 +406,7 @@ impl SemanticIndex {
                         write.refs = data.refs.into_iter().collect();
                         write.sections = data.sections.into_iter().collect();
                         write.todos = data.todos.into_iter().collect();
+                        write.tables = data.tables.into_iter().collect();
                         write.bibliographies = data.bibliographies;
                         write.file_hashes = data.file_hashes.into_iter().collect();
                     }

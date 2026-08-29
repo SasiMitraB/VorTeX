@@ -10,7 +10,7 @@ use gpui::*;
 use state::{AppState, PaneSide, TabType, ViewMode};
 use std::sync::mpsc;
 use std::sync::Arc;
-use theme::Theme;
+use theme::{detect_system_theme, Theme, ThemeMode, ThemePreference};
 use views::editor::LatexEditor;
 #[allow(unused_imports)]
 use views::pdf_preview::render_pdf_preview;
@@ -18,7 +18,7 @@ use views::pdf_viewer::render_pdf_viewer;
 use views::project_selector::render_project_selector;
 use views::sidebar::render_sidebar;
 use views::status_bar::render_status_bar;
-use views::table_editor::{render_table_editor_modal, TableEditorModal};
+use views::table_editor::{render_table_editor_modal, TableSpreadsheet};
 use views::tabs::render_tab_bar;
 use views::workspace::render_toolbar;
 
@@ -26,7 +26,7 @@ pub struct VorTexApp {
     state: AppState,
     editor_left: Entity<LatexEditor>,
     editor_right: Entity<LatexEditor>,
-    table_modal: TableEditorModal,
+    table_sheet: TableSpreadsheet,
     event_rx: Arc<std::sync::Mutex<mpsc::Receiver<BackendEvent>>>,
     event_tx: mpsc::Sender<BackendEvent>,
 }
@@ -50,6 +50,7 @@ enum BackendEvent {
     SynctexInverseFinished {
         result: Option<crate::services::synctex::SynctexInverseResult>,
     },
+    OsAppearanceChanged(ThemeMode),
 }
 
 impl VorTexApp {
@@ -59,6 +60,20 @@ impl VorTexApp {
         let (tx, rx) = mpsc::channel();
         let tx_change = tx.clone();
         let tx_ready = tx.clone();
+        let tx_theme = tx.clone();
+
+        // Background thread to detect OS-level appearance changes dynamically
+        std::thread::spawn(move || {
+            let mut last_detected = detect_system_theme();
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+                let current = detect_system_theme();
+                if current != last_detected {
+                    last_detected = current;
+                    let _ = tx_theme.send(BackendEvent::OsAppearanceChanged(current));
+                }
+            }
+        });
 
         backend.set_on_file_change(move |ev| {
             let _ = tx_change.send(BackendEvent::FileChange(ev));
@@ -93,6 +108,26 @@ impl VorTexApp {
             }
         }
 
+        // Check if there is a saved theme preference
+        if let Ok(Some(pref_val)) = app_state.backend.config_get("themePreference") {
+            if let Some(pref_str) = pref_val.as_str() {
+                let pref = match pref_str.to_lowercase().as_str() {
+                    "dark" => ThemePreference::Dark,
+                    "light" => ThemePreference::Light,
+                    _ => ThemePreference::Auto,
+                };
+                app_state.theme_preference = pref;
+            }
+        }
+
+        let effective_mode = match app_state.theme_preference {
+            ThemePreference::Dark => ThemeMode::Dark,
+            ThemePreference::Light => ThemeMode::Light,
+            ThemePreference::Auto => detect_system_theme(),
+        };
+        Theme::set_mode(effective_mode);
+        app_state.theme_mode = effective_mode;
+
         // Add initial tab to left pane
         let tab_id = app_state.generate_tab_id();
         app_state.pane_left.tabs.push(state::Tab::new_text(
@@ -107,10 +142,30 @@ impl VorTexApp {
             state: app_state,
             editor_left,
             editor_right,
-            table_modal: TableEditorModal::default(),
+            table_sheet: TableSpreadsheet::default(),
             event_rx: Arc::new(std::sync::Mutex::new(rx)),
             event_tx: tx,
         }
+    }
+
+    pub fn toggle_theme(&mut self, cx: &mut Context<Self>) {
+        let next_pref = self.state.theme_preference.next();
+        self.state.theme_preference = next_pref;
+        let effective_mode = match next_pref {
+            ThemePreference::Dark => ThemeMode::Dark,
+            ThemePreference::Light => ThemeMode::Light,
+            ThemePreference::Auto => detect_system_theme(),
+        };
+        Theme::set_mode(effective_mode);
+        self.state.theme_mode = effective_mode;
+        let pref_str = match next_pref {
+            ThemePreference::Auto => "auto",
+            ThemePreference::Light => "light",
+            ThemePreference::Dark => "dark",
+        };
+        let _ = self.state.backend.config_set("themePreference", serde_json::json!(pref_str));
+        self.state.status_message = Some(format!("Theme: {}", next_pref.label(effective_mode)));
+        cx.notify();
     }
 
     pub fn open_project(&mut self, project_path: String, cx: &mut Context<Self>) {
@@ -128,9 +183,12 @@ impl VorTexApp {
             self.state.file_tree = tree;
         }
 
-        // Load project outline and todos
+        // Load project outline, tables, and todos
         if let Ok(sections) = self.state.backend.get_all_sections() {
             self.state.outline_sections = sections;
+        }
+        if let Ok(tables) = self.state.backend.get_tables(None) {
+            self.state.outline_tables = tables;
         }
         if let Ok(todos) = self.state.backend.get_todos(None) {
             self.state.todos = todos;
@@ -165,7 +223,7 @@ impl VorTexApp {
                 editor.set_content(&content, Some(path.clone()));
             });
 
-            // Update document outline and todos
+            // Update document outline, tables, and todos
             if let Ok(sections) = self.state.backend.get_all_sections() {
                 if !sections.is_empty() {
                     self.state.outline_sections = sections;
@@ -176,6 +234,9 @@ impl VorTexApp {
                 if let Ok(sections) = self.state.backend.get_sections(&path) {
                     self.state.outline_sections = sections;
                 }
+            }
+            if let Ok(tables) = self.state.backend.get_tables(None) {
+                self.state.outline_tables = tables;
             }
             if let Ok(todos) = self.state.backend.get_todos(None) {
                 self.state.todos = todos;
@@ -214,9 +275,12 @@ impl VorTexApp {
                         self.state.index_stats = stats;
                     }
 
-                    // Refresh outline and todos
+                    // Refresh outline, tables, and todos
                     if let Ok(sections) = self.state.backend.get_all_sections() {
                         self.state.outline_sections = sections;
+                    }
+                    if let Ok(tables) = self.state.backend.get_tables(None) {
+                        self.state.outline_tables = tables;
                     }
                     if let Ok(todos) = self.state.backend.get_todos(None) {
                         self.state.todos = todos;
@@ -630,6 +694,9 @@ impl VorTexApp {
                         if let Ok(sections) = self.state.backend.get_all_sections() {
                             self.state.outline_sections = sections;
                         }
+                        if let Ok(tables) = self.state.backend.get_tables(None) {
+                            self.state.outline_tables = tables;
+                        }
                         if let Ok(todos) = self.state.backend.get_todos(None) {
                             self.state.todos = todos;
                         }
@@ -640,6 +707,9 @@ impl VorTexApp {
                     self.state.status_message = Some("Semantic index ready".to_string());
                     if let Ok(sections) = self.state.backend.get_all_sections() {
                         self.state.outline_sections = sections;
+                    }
+                    if let Ok(tables) = self.state.backend.get_tables(None) {
+                        self.state.outline_tables = tables;
                     }
                     if let Ok(todos) = self.state.backend.get_todos(None) {
                         self.state.todos = todos;
@@ -715,17 +785,36 @@ impl VorTexApp {
                         cx.notify();
                     }
                 }
+                BackendEvent::OsAppearanceChanged(mode) => {
+                    if self.state.theme_preference == ThemePreference::Auto {
+                        Theme::set_mode(mode);
+                        self.state.theme_mode = mode;
+                        cx.notify();
+                    }
+                }
             }
         }
     }
 }
 
 impl Render for VorTexApp {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.state.theme_preference == ThemePreference::Auto {
+            let os_mode = match window.appearance() {
+                WindowAppearance::Dark | WindowAppearance::VibrantDark => ThemeMode::Dark,
+                WindowAppearance::Light | WindowAppearance::VibrantLight => ThemeMode::Light,
+            };
+            if Theme::mode() != os_mode {
+                Theme::set_mode(os_mode);
+                self.state.theme_mode = os_mode;
+            }
+        }
+
         self.process_background_events(cx);
 
         let current_view = self.state.current_view;
         let view_handle = cx.entity().clone();
+        let theme_label = self.state.theme_preference.label(self.state.theme_mode);
 
         match current_view {
             ViewMode::ProjectSelector => {
@@ -735,11 +824,13 @@ impl Render for VorTexApp {
 
                 let view1 = view_handle.clone();
                 let view2 = view_handle.clone();
+                let view_theme = view_handle.clone();
 
                 render_project_selector(
                     &projects,
                     projects_folder.as_deref(),
                     &proj_scroll,
+                    &theme_label,
                     move |proj_path, _window, cx| {
                         view1.update(cx, |this, cx| {
                             this.open_project(proj_path, cx);
@@ -758,6 +849,11 @@ impl Render for VorTexApp {
                             });
                         }
                     },
+                    move |_window, cx| {
+                        view_theme.update(cx, |this, cx| {
+                            this.toggle_theme(cx);
+                        });
+                    },
                 )
                 .into_any_element()
             }
@@ -772,6 +868,7 @@ impl Render for VorTexApp {
                 let file_tree = self.state.file_tree.clone();
                 let expanded_folders = self.state.expanded_folders.clone();
                 let outline_sections = self.state.outline_sections.clone();
+                let outline_tables = self.state.outline_tables.clone();
                 let todos = self.state.todos.clone();
                 let active_tab_path = self.state.active_tab().and_then(|t| t.path.clone());
                 let act_sidebar = active_tab_path.clone();
@@ -790,8 +887,8 @@ impl Render for VorTexApp {
                 let left_active_tab = self.state.pane_left.active_tab().cloned();
                 let right_active_tab = self.state.pane_right.active_tab().cloned();
 
-                let table_open = self.table_modal.is_open;
-                let table_modal = self.table_modal.default_clone();
+                let table_open = self.table_sheet.is_open;
+                let table_sheet_clone = self.table_sheet.default_clone();
                 let table_scroll = self.state.table_scroll_handle.clone();
 
                 // Ensure PDF viewers are prepared; spawn async render if needed (non-blocking)
@@ -850,6 +947,7 @@ impl Render for VorTexApp {
                 let v_open_tree_file = view_handle.clone();
                 let v_select_sidebar_tab = view_handle.clone();
                 let v_jump_location = view_handle.clone();
+                let v_open_table = view_handle.clone();
 
                 let v_sw_left = view_handle.clone();
                 let v_cl_left = view_handle.clone();
@@ -863,11 +961,20 @@ impl Render for VorTexApp {
 
                 let v_tbl_ins = view_handle.clone();
                 let v_tbl_cls = view_handle.clone();
-                let v_tbl_cell = view_handle.clone();
+                let v_tbl_sel = view_handle.clone();
+                let v_tbl_ed = view_handle.clone();
+                let v_tbl_ch = view_handle.clone();
                 let v_tbl_ar = view_handle.clone();
                 let v_tbl_rr = view_handle.clone();
                 let v_tbl_ac = view_handle.clone();
                 let v_tbl_rc = view_handle.clone();
+                let v_tbl_cyc = view_handle.clone();
+                let v_tbl_bt = view_handle.clone();
+                let v_tbl_mr = view_handle.clone();
+                let v_tbl_md = view_handle.clone();
+                let v_tbl_um = view_handle.clone();
+                let v_tbl_cap = view_handle.clone();
+                let v_tbl_lbl = view_handle.clone();
 
                 let v_left_zoom_in = view_handle.clone();
                 let v_left_zoom_out = view_handle.clone();
@@ -882,6 +989,7 @@ impl Render for VorTexApp {
                 let v_right_inverse = view_handle.clone();
 
                 let v_sync_forward = view_handle.clone();
+                let v_theme = view_handle.clone();
 
                 div()
                     .size_full()
@@ -922,12 +1030,20 @@ impl Render for VorTexApp {
                                         this.forward_sync_to_pdf(cx);
                                     }
                                 }
+                                "t" | "T" => {
+                                    if is_shift {
+                                        this.toggle_theme(cx);
+                                    }
+                                }
                                 _ => {}
                             }
                         }
                         // Also handle Cmd+Shift+J without relying on key match above? Already covered
                         if is_cmd && is_shift && key == "j" {
                             this.forward_sync_to_pdf(cx);
+                        }
+                        if is_cmd && is_shift && (key == "t" || key == "T") {
+                            this.toggle_theme(cx);
                         }
                     }))
                     .child(
@@ -936,6 +1052,7 @@ impl Render for VorTexApp {
                             project_name,
                             sidebar_vis,
                             is_building,
+                            &theme_label,
                             move |_window, cx| {
                                 v_back.update(cx, |this, cx| {
                                     this.state.current_view = ViewMode::ProjectSelector;
@@ -991,13 +1108,26 @@ impl Render for VorTexApp {
                             },
                             move |_window, cx| {
                                 v_table.update(cx, |this, cx| {
-                                    this.table_modal.is_open = true;
+                                    let cur_file = this.state.active_tab().and_then(|t| t.path.clone());
+                                    let table_under_cursor = this.editor_left.read(cx).find_table_at_cursor();
+                                    if let Some((table_src, span)) = table_under_cursor {
+                                        this.table_sheet.load_from_latex(&table_src, Some(span), cur_file);
+                                    } else {
+                                        this.table_sheet = TableSpreadsheet::default();
+                                        this.table_sheet.model.source_file = cur_file;
+                                    }
+                                    this.table_sheet.is_open = true;
                                     cx.notify();
                                 });
                             },
                             move |_window, cx| {
                                 v_sync_forward.update(cx, |this, cx| {
                                     this.forward_sync_to_pdf(cx);
+                                });
+                            },
+                            move |_window, cx| {
+                                v_theme.update(cx, |this, cx| {
+                                    this.toggle_theme(cx);
                                 });
                             },
                         ),
@@ -1014,6 +1144,7 @@ impl Render for VorTexApp {
                                     &file_tree,
                                     &expanded_folders,
                                     &outline_sections,
+                                    &outline_tables,
                                     &todos,
                                     act_sidebar.as_deref(),
                                     &tree_scroll,
@@ -1044,6 +1175,21 @@ impl Render for VorTexApp {
                                     move |file_path, line_num, _window, cx| {
                                         v_jump_location.update(cx, |this, cx| {
                                             this.jump_to_document_location(file_path, line_num, cx);
+                                        });
+                                    },
+                                    move |file_path, byte_start, byte_end, _window, cx| {
+                                        v_open_table.update(cx, |this, cx| {
+                                            let content = this.state.backend.read_file(&file_path).unwrap_or_default();
+                                            this.open_file_in_active_pane(file_path.clone(), content.clone(), cx);
+                                            if byte_start < content.len() && byte_end <= content.len() && byte_start < byte_end {
+                                                let snippet = &content[byte_start..byte_end];
+                                                this.table_sheet.load_from_latex(snippet, Some(byte_start..byte_end), Some(file_path));
+                                            } else {
+                                                this.table_sheet = TableSpreadsheet::default();
+                                                this.table_sheet.model.source_file = Some(file_path);
+                                            }
+                                            this.table_sheet.is_open = true;
+                                            cx.notify();
                                         });
                                     },
                                 ))
@@ -1394,50 +1540,122 @@ impl Render for VorTexApp {
                     )
                     .when(table_open, move |d| {
                         d.child(render_table_editor_modal(
-                            &table_modal,
+                            &table_sheet_clone,
                             &table_scroll,
                             move |latex_code, _window, cx| {
                                 v_tbl_ins.update(cx, |this, cx| {
-                                    this.editor_left.update(cx, |ed, _cx| {
-                                        ed.insert_text(&latex_code);
-                                    });
-                                    this.table_modal.is_open = false;
+                                    let span_opt = this.table_sheet.model.source_span.clone();
+                                    if let Some(span) = span_opt {
+                                        this.editor_left.update(cx, |ed, _cx| {
+                                            ed.replace_range(span, &latex_code);
+                                        });
+                                    } else {
+                                        this.editor_left.update(cx, |ed, _cx| {
+                                            ed.insert_text(&latex_code);
+                                        });
+                                    }
+                                    this.table_sheet.is_open = false;
                                     cx.notify();
                                 });
                             },
                             move |_window, cx| {
                                 v_tbl_cls.update(cx, |this, cx| {
-                                    this.table_modal.is_open = false;
+                                    this.table_sheet.is_open = false;
+                                    cx.notify();
+                                });
+                            },
+                            move |r, c, _window, cx| {
+                                v_tbl_sel.update(cx, |this, cx| {
+                                    if this.table_sheet.active_cell == Some((r, c)) && this.table_sheet.editing_cell.is_none() {
+                                        this.table_sheet.start_edit(r, c);
+                                    } else {
+                                        this.table_sheet.commit_edit();
+                                        this.table_sheet.active_cell = Some((r, c));
+                                    }
+                                    cx.notify();
+                                });
+                            },
+                            move |r, c, _window, cx| {
+                                v_tbl_ed.update(cx, |this, cx| {
+                                    this.table_sheet.start_edit(r, c);
                                     cx.notify();
                                 });
                             },
                             move |r, c, val, _window, cx| {
-                                v_tbl_cell.update(cx, |this, cx| {
-                                    this.table_modal.set_cell(r, c, val);
+                                v_tbl_ch.update(cx, |this, cx| {
+                                    this.table_sheet.set_cell(r, c, val);
                                     cx.notify();
                                 });
                             },
                             move |_window, cx| {
                                 v_tbl_ar.update(cx, |this, cx| {
-                                    this.table_modal.add_row();
+                                    this.table_sheet.add_row();
                                     cx.notify();
                                 });
                             },
                             move |_window, cx| {
                                 v_tbl_rr.update(cx, |this, cx| {
-                                    this.table_modal.remove_row();
+                                    this.table_sheet.remove_row();
                                     cx.notify();
                                 });
                             },
                             move |_window, cx| {
                                 v_tbl_ac.update(cx, |this, cx| {
-                                    this.table_modal.add_col();
+                                    this.table_sheet.add_col();
                                     cx.notify();
                                 });
                             },
                             move |_window, cx| {
                                 v_tbl_rc.update(cx, |this, cx| {
-                                    this.table_modal.remove_col();
+                                    this.table_sheet.remove_col();
+                                    cx.notify();
+                                });
+                            },
+                            move |col, _window, cx| {
+                                v_tbl_cyc.update(cx, |this, cx| {
+                                    this.table_sheet.cycle_col_align(col);
+                                    cx.notify();
+                                });
+                            },
+                            move |_window, cx| {
+                                v_tbl_bt.update(cx, |this, cx| {
+                                    this.table_sheet.toggle_booktabs();
+                                    cx.notify();
+                                });
+                            },
+                            move |r, c, _window, cx| {
+                                v_tbl_mr.update(cx, |this, cx| {
+                                    if c + 1 < this.table_sheet.model.num_cols() {
+                                        this.table_sheet.merge_selection(r, c, r, c + 1);
+                                        cx.notify();
+                                    }
+                                });
+                            },
+                            move |r, c, _window, cx| {
+                                v_tbl_md.update(cx, |this, cx| {
+                                    if r + 1 < this.table_sheet.model.num_rows() {
+                                        this.table_sheet.merge_selection(r, c, r + 1, c);
+                                        cx.notify();
+                                    }
+                                });
+                            },
+                            move |r, c, _window, cx| {
+                                v_tbl_um.update(cx, |this, cx| {
+                                    this.table_sheet.unmerge_cell(r, c);
+                                    cx.notify();
+                                });
+                            },
+                            move |caption, _window, cx| {
+                                v_tbl_cap.update(cx, |this, cx| {
+                                    this.table_sheet.caption_buffer = caption;
+                                    this.table_sheet.sync_caption_label();
+                                    cx.notify();
+                                });
+                            },
+                            move |label, _window, cx| {
+                                v_tbl_lbl.update(cx, |this, cx| {
+                                    this.table_sheet.label_buffer = label;
+                                    this.table_sheet.sync_caption_label();
                                     cx.notify();
                                 });
                             },
@@ -1445,18 +1663,6 @@ impl Render for VorTexApp {
                     })
                     .into_any_element()
             }
-        }
-    }
-}
-
-impl TableEditorModal {
-    fn default_clone(&self) -> Self {
-        Self {
-            rows: self.rows,
-            cols: self.cols,
-            cells: self.cells.clone(),
-            is_open: self.is_open,
-            on_insert: None,
         }
     }
 }

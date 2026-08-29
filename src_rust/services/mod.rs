@@ -7,4 +7,4 @@ pub mod latex_parser;
 pub mod pdf_renderer;
 pub mod semantic_index;
 pub mod synctex;
-
+pub mod table_parser;

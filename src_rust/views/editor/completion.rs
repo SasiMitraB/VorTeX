@@ -145,7 +145,7 @@ pub fn render_completion_popup(
         .left(cursor_x)
         .w(px(380.0))
         .max_h(px(240.0))
-        .bg(Theme::bg_modal())
+        .bg(Theme::completion_popup_bg())
         .border_1()
         .border_color(Theme::border_subtle())
         .rounded_md()
@@ -195,7 +195,7 @@ pub fn render_completion_popup(
                         CompletionKind::Citation => ("❝", Theme::accent_purple()),
                         CompletionKind::Environment => ("⚡", Theme::accent_yellow()),
                         CompletionKind::Command => ("λ", Theme::accent_cyan()),
-                        CompletionKind::File => ("📄", Theme::accent_green()),
+                        CompletionKind::File => ("📄", Theme::text_dim()),
                         CompletionKind::Snippet => ("✦", Theme::accent_orange()),
                     };
 
@@ -207,7 +207,7 @@ pub fn render_completion_popup(
                         .items_center()
                         .justify_between()
                         .cursor_pointer()
-                        .when(is_selected, |d| d.bg(Theme::bg_active()))
+                        .when(is_selected, |d| d.bg(Theme::completion_selected_item_bg()))
                         .when(!is_selected, |d| d.hover(|h| h.bg(Theme::bg_hover())))
                         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                             on_sel(item_clone.clone(), window, cx);

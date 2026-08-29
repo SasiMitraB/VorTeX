@@ -123,6 +123,91 @@ impl LatexEditor {
         self.lines.join("\n")
     }
 
+    pub fn find_table_at_cursor(&self) -> Option<(String, std::ops::Range<usize>)> {
+        let content = self.get_content();
+        let mut cursor_byte = 0;
+        for (r, line) in self.lines.iter().enumerate() {
+            if r == self.cursor_row {
+                let col_chars = self.cursor_col.min(line.chars().count());
+                let col_bytes: usize = line.chars().take(col_chars).map(|c| c.len_utf8()).sum();
+                cursor_byte += col_bytes;
+                break;
+            } else {
+                cursor_byte += line.len() + 1; // +1 for '\n'
+            }
+        }
+
+        // 1. Check if enclosed within \begin{table} ... \end{table}
+        let mut search_idx = 0;
+        while let Some(table_pos) = content[search_idx..].find("\\begin{table") {
+            let abs_start = search_idx + table_pos;
+            if let Some(table_end_rel) = content[abs_start..].find("\\end{table}") {
+                let abs_end = abs_start + table_end_rel + "\\end{table}".len();
+                if cursor_byte >= abs_start && cursor_byte <= abs_end {
+                    let snippet = content[abs_start..abs_end].to_string();
+                    return Some((snippet, abs_start..abs_end));
+                }
+                search_idx = abs_end;
+            } else {
+                search_idx = abs_start + "\\begin{table".len();
+            }
+        }
+
+        // 2. Check if enclosed within \begin{tabular} ... \end{tabular}
+        search_idx = 0;
+        while let Some(tab_pos) = content[search_idx..].find("\\begin{tabular") {
+            let abs_start = search_idx + tab_pos;
+            if let Some(tab_end_rel) = content[abs_start..].find("\\end{tabular}") {
+                let abs_end = abs_start + tab_end_rel + "\\end{tabular}".len();
+                if cursor_byte >= abs_start && cursor_byte <= abs_end {
+                    let snippet = content[abs_start..abs_end].to_string();
+                    return Some((snippet, abs_start..abs_end));
+                }
+                search_idx = abs_end;
+            } else {
+                search_idx = abs_start + "\\begin{tabular".len();
+            }
+        }
+
+        None
+    }
+
+    pub fn replace_range(&mut self, range: std::ops::Range<usize>, new_text: &str) {
+        self.push_undo();
+        let content = self.get_content();
+        if range.start <= content.len() && range.end <= content.len() && range.start <= range.end {
+            let mut updated = String::with_capacity(content.len().saturating_sub(range.end - range.start) + new_text.len());
+            updated.push_str(&content[..range.start]);
+            updated.push_str(new_text);
+            updated.push_str(&content[range.end..]);
+
+            self.lines = if updated.is_empty() {
+                vec![String::new()]
+            } else {
+                updated.lines().map(|s| s.to_string()).collect()
+            };
+
+            let mut accumulated = 0;
+            let mut target_r = 0;
+            let mut target_c = 0;
+            for (r, line) in self.lines.iter().enumerate() {
+                let line_len = line.len();
+                if accumulated + line_len >= range.start {
+                    target_r = r;
+                    let byte_offset_in_line = range.start.saturating_sub(accumulated);
+                    target_c = line[..byte_offset_in_line.min(line_len)].chars().count();
+                    break;
+                }
+                accumulated += line_len + 1;
+            }
+
+            self.cursor_row = target_r.min(self.lines.len().saturating_sub(1));
+            self.cursor_col = target_c;
+            self.clear_selection();
+            self.is_dirty = true;
+        }
+    }
+
     pub fn jump_to_line(&mut self, line: usize) {
         let row = line.saturating_sub(1).min(self.lines.len().saturating_sub(1));
         self.cursor_row = row;
@@ -2036,7 +2121,7 @@ impl Render for LatexEditor {
                                             .items_center()
                                             .text_xs()
                                             .font_family(".AppleSystemUIFontMonospaced")
-                                            .text_color(if is_active { Theme::text_bright() } else { Theme::text_dim() })
+                                            .text_color(if is_active { Theme::line_num_active() } else { Theme::line_num_inactive() })
                                             .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
                                             .child(line_num_str)
                                     })),
@@ -2140,7 +2225,7 @@ impl Render for LatexEditor {
                                                         .left(col_offset)
                                                         .w(px(2.0))
                                                         .h(px(18.0))
-                                                        .bg(Theme::border_focus()),
+                                                        .bg(Theme::caret()),
                                                 )
                                             })
                                     })),

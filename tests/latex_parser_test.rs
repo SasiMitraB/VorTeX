@@ -105,3 +105,48 @@ fn test_get_section_level_mapping() {
     assert_eq!(get_section_level("subparagraph"), 6);
     assert_eq!(get_section_level("unknown"), 2);
 }
+
+#[test]
+fn test_extracts_tables_correctly() {
+    let content = r#"
+\documentclass{article}
+\begin{document}
+\section{Results}
+
+\begin{table}[h!]
+  \centering
+  \caption{Test Results Table}
+  \label{tbl:results}
+  \begin{tabular}{|l|c|r|}
+    \toprule
+    Name & Score & Rank \\
+    \midrule
+    Alice & 98 & 1 \\
+    Bob & 85 & 2 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Some text in between.
+
+\begin{tabular}{c c}
+  1 & 2 \\
+  3 & 4 \\
+\end{tabular}
+
+\end{document}
+    "#;
+
+    let result = parse_latex_file("/test/doc_with_tables.tex", content);
+    assert_eq!(result.tables.len(), 2);
+
+    assert_eq!(result.tables[0].caption.as_deref(), Some("Test Results Table"));
+    assert_eq!(result.tables[0].label.as_deref(), Some("tbl:results"));
+    assert!(result.tables[0].byte_end > result.tables[0].byte_start);
+
+    // Standalone tabular
+    assert_eq!(result.tables[1].caption, None);
+    assert_eq!(result.tables[1].label, None);
+    assert!(result.tables[1].byte_end > result.tables[1].byte_start);
+}
+

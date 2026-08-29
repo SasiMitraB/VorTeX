@@ -11,7 +11,7 @@ pub use crate::services::file_watcher::{FileChangeEvent, FileWatcher};
 pub use crate::services::fs_utils::{build_tree, get_config_val, scan_projects, set_config_val, ProjectItem, TreeNode};
 pub use crate::services::fuzzy_matcher::{FuzzyMatchResult, Matcher};
 #[allow(unused_imports)]
-pub use crate::services::latex_parser::{LabelItem, SectionItem, TodoItem};
+pub use crate::services::latex_parser::{LabelItem, SectionItem, TableItem, TodoItem};
 #[allow(unused_imports)]
 pub use crate::services::pdf_renderer::{
     ensure_pdf_rendered, get_pdf_page_count, get_pdf_page_dimensions, is_cache_valid,
@@ -149,6 +149,14 @@ impl BackendClient {
             Ok(self.semantic_index.get_todos_for_file(path))
         } else {
             Ok(self.semantic_index.get_all_todos())
+        }
+    }
+
+    pub fn get_tables(&self, file_path: Option<&str>) -> Result<Vec<TableItem>> {
+        if let Some(path) = file_path {
+            Ok(self.semantic_index.get_tables_for_file(path))
+        } else {
+            Ok(self.semantic_index.get_all_tables())
         }
     }
 

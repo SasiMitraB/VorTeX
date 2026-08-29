@@ -60,6 +60,23 @@ pub struct TodoItem {
     pub line: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TableItem {
+    #[serde(rename = "type", default = "default_table_type")]
+    pub item_type: String, // "table"
+    pub file: String,
+    pub filename: String,
+    pub line: usize,
+    pub caption: Option<String>,
+    pub label: Option<String>,
+    pub byte_start: usize,
+    pub byte_end: usize,
+}
+
+fn default_table_type() -> String {
+    "table".to_string()
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ParsedLatex {
     pub labels: Vec<LabelItem>,
@@ -68,6 +85,7 @@ pub struct ParsedLatex {
     pub bibliographies: Vec<BibRef>,
     pub sections: Vec<SectionItem>,
     pub todos: Vec<TodoItem>,
+    pub tables: Vec<TableItem>,
 }
 
 static SECTION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -76,6 +94,10 @@ static SECTION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 
 static LABEL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\\label\s*\{([^}]+)\}").unwrap()
+});
+
+static CAPTION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\\caption\s*\{([^}]+)\}").unwrap()
 });
 
 static CITE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -233,6 +255,76 @@ pub fn parse_latex_file(file_path: &str, content: &str) -> ParsedLatex {
                 filename: filename.clone(),
                 line: line_num,
             });
+        }
+    }
+
+    // Extract tables
+    let mut search_idx = 0;
+    let mut covered_ranges: Vec<(usize, usize)> = Vec::new();
+
+    // 1. First search for \begin{table} ... \end{table}
+    while let Some(table_pos) = content[search_idx..].find("\\begin{table") {
+        let abs_start = search_idx + table_pos;
+        if let Some(table_end_rel) = content[abs_start..].find("\\end{table}") {
+            let abs_end = abs_start + table_end_rel + "\\end{table}".len();
+            let snippet = &content[abs_start..abs_end];
+            let line_num = content[..abs_start].chars().filter(|&c| c == '\n').count() + 1;
+
+            let mut caption = None;
+            let mut label = None;
+            if let Some(cap_m) = CAPTION_REGEX.captures(snippet) {
+                caption = cap_m.get(1).map(|m| m.as_str().trim().to_string());
+            }
+            if let Some(lbl_m) = LABEL_REGEX.captures(snippet) {
+                label = lbl_m.get(1).map(|m| m.as_str().trim().to_string());
+            }
+
+            result.tables.push(TableItem {
+                item_type: "table".to_string(),
+                file: file_path.to_string(),
+                filename: filename.clone(),
+                line: line_num,
+                caption,
+                label,
+                byte_start: abs_start,
+                byte_end: abs_end,
+            });
+
+            covered_ranges.push((abs_start, abs_end));
+            search_idx = abs_end;
+        } else {
+            search_idx = abs_start + "\\begin{table".len();
+        }
+    }
+
+    // 2. Then search for standalone \begin{tabular} ... \end{tabular} not within \begin{table}
+    search_idx = 0;
+    while let Some(tab_pos) = content[search_idx..].find("\\begin{tabular") {
+        let abs_start = search_idx + tab_pos;
+        let is_covered = covered_ranges.iter().any(|(s, e)| abs_start >= *s && abs_start < *e);
+        if is_covered {
+            search_idx = abs_start + "\\begin{tabular".len();
+            continue;
+        }
+
+        if let Some(tab_end_rel) = content[abs_start..].find("\\end{tabular}") {
+            let abs_end = abs_start + tab_end_rel + "\\end{tabular}".len();
+            let line_num = content[..abs_start].chars().filter(|&c| c == '\n').count() + 1;
+
+            result.tables.push(TableItem {
+                item_type: "table".to_string(),
+                file: file_path.to_string(),
+                filename: filename.clone(),
+                line: line_num,
+                caption: None,
+                label: None,
+                byte_start: abs_start,
+                byte_end: abs_end,
+            });
+
+            search_idx = abs_end;
+        } else {
+            search_idx = abs_start + "\\begin{tabular".len();
         }
     }
 

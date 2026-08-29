@@ -7,10 +7,14 @@ pub fn render_project_selector(
     projects: &[ProjectItem],
     projects_folder: Option<&str>,
     scroll_handle: &ScrollHandle,
+    theme_label: &str,
     on_select_project: impl Fn(String, &mut Window, &mut App) + 'static + Clone,
     on_change_folder: impl Fn(&mut Window, &mut App) + 'static + Clone,
+    on_toggle_theme: impl Fn(&mut Window, &mut App) + 'static + Clone,
 ) -> impl IntoElement {
     let on_ch = on_change_folder.clone();
+    let on_theme = on_toggle_theme.clone();
+    let theme_label_str = theme_label.to_string();
 
     div()
         .id("project_selector_scroll")
@@ -52,7 +56,7 @@ pub fn render_project_selector(
                                         .items_center()
                                         .text_xl()
                                         .font_weight(FontWeight::BOLD)
-                                        .text_color(Theme::bg_titlebar())
+                                        .text_color(Theme::text_inverted())
                                         .child("V"),
                                 )
                                 .child(
@@ -76,67 +80,142 @@ pub fn render_project_selector(
                         )
                         .child(
                             div()
-                                .px_4()
-                                .py_2()
-                                .bg(Theme::bg_card())
-                                .hover(|h| h.bg(Theme::bg_hover()))
-                                .border_1()
-                                .border_color(Theme::border_subtle())
-                                .rounded_md()
-                                .cursor_pointer()
                                 .flex()
                                 .items_center()
-                                .gap_2()
-                                .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                                    on_ch(window, cx);
-                                })
+                                .gap_3()
                                 .child(
                                     div()
-                                        .text_sm()
-                                        .text_color(Theme::accent_blue())
-                                        .child("📁"),
+                                        .px_3()
+                                        .py_2()
+                                        .bg(Theme::bg_card())
+                                        .hover(|h| h.bg(Theme::bg_hover()))
+                                        .border_1()
+                                        .border_color(Theme::border_subtle())
+                                        .rounded_md()
+                                        .cursor_pointer()
+                                        .flex()
+                                        .items_center()
+                                        .gap_1p5()
+                                        .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                                            on_theme(window, cx);
+                                        })
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(Theme::text_primary())
+                                                .child(theme_label_str),
+                                        ),
                                 )
                                 .child(
                                     div()
-                                        .text_xs()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(Theme::text_bright())
-                                        .child("Change Projects Folder"),
+                                        .px_4()
+                                        .py_2()
+                                        .bg(Theme::bg_card())
+                                        .hover(|h| h.bg(Theme::bg_hover()))
+                                        .border_1()
+                                        .border_color(Theme::border_subtle())
+                                        .rounded_md()
+                                        .cursor_pointer()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                                            on_ch(window, cx);
+                                        })
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(Theme::accent_blue())
+                                                .child("📁"),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(Theme::text_primary())
+                                                .child(if projects_folder.is_some() {
+                                                    "Change Projects Folder"
+                                                } else {
+                                                    "Choose Projects Folder"
+                                                }),
+                                        ),
                                 ),
                         ),
                 )
                 .child(
-                    // Folder location label pill
-                    div()
-                        .px_3()
-                        .py_1p5()
-                        .bg(Theme::bg_sidebar())
-                        .border_1()
-                        .border_color(Theme::border_subtle())
-                        .rounded_md()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(Theme::accent_yellow())
-                                .child("📂"),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(Theme::text_muted())
-                                .child(projects_folder.unwrap_or("No projects folder selected").to_string()),
-                        ),
+                    if let Some(folder) = projects_folder {
+                        div()
+                            .text_xs()
+                            .text_color(Theme::text_dim())
+                            .child(format!("Scanning: {}", folder))
+                            .into_any_element()
+                    } else {
+                        div().into_any_element()
+                    },
                 ),
         )
         .child(
-            // Projects Grid
+            // Projects Grid or Empty State
             div()
                 .w_full()
                 .max_w(px(900.0))
-                .children(if projects.is_empty() {
+                .flex()
+                .flex_col()
+                .gap_4()
+                .children(if projects_folder.is_none() {
+                    let on_ch2 = on_change_folder.clone();
+                    vec![
+                        div()
+                            .w_full()
+                            .py_16()
+                            .bg(Theme::bg_card())
+                            .border_1()
+                            .border_color(Theme::border_subtle())
+                            .rounded_xl()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .justify_center()
+                            .gap_4()
+                            .child(
+                                div()
+                                    .text_3xl()
+                                    .text_color(Theme::accent_blue())
+                                    .child("📁"),
+                            )
+                            .child(
+                                div()
+                                    .text_lg()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(Theme::text_bright())
+                                    .child("Choose your LaTeX Projects Directory"),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(Theme::text_muted())
+                                    .child("Select a parent directory containing all your LaTeX project folders"),
+                            )
+                            .child(
+                                div()
+                                    .px_4()
+                                    .py_2()
+                                    .bg(Theme::accent_blue())
+                                    .hover(|h| h.bg(Theme::border_focus()))
+                                    .rounded_md()
+                                    .cursor_pointer()
+                                    .text_xs()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(Theme::text_inverted())
+                                    .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                                        on_ch2(window, cx);
+                                    })
+                                    .child("Select Folder"),
+                            )
+                            .into_any_element(),
+                    ]
+                } else if projects.is_empty() {
                     let on_ch2 = on_change_folder.clone();
                     vec![
                         div()
@@ -175,12 +254,12 @@ pub fn render_project_selector(
                                     .px_4()
                                     .py_2()
                                     .bg(Theme::accent_blue())
-                                    .hover(|h| h.bg(hsla(207.0 / 360.0, 0.82, 0.75, 1.0)))
+                                    .hover(|h| h.bg(Theme::border_focus()))
                                     .rounded_md()
                                     .cursor_pointer()
                                     .text_xs()
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(Theme::bg_titlebar())
+                                    .text_color(Theme::text_inverted())
                                     .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                                         on_ch2(window, cx);
                                     })
@@ -240,9 +319,9 @@ pub fn render_project_selector(
                                                         .right_2()
                                                         .px_2()
                                                         .py_0p5()
-                                                        .bg(hsla(220.0 / 360.0, 0.2, 0.1, 0.85))
+                                                        .bg(Theme::modal_backdrop())
                                                         .border_1()
-                                                        .border_color(hsla(0.0, 0.0, 1.0, 0.15))
+                                                        .border_color(Theme::border_subtle())
                                                         .rounded_md()
                                                         .text_xs()
                                                         .font_weight(FontWeight::BOLD)

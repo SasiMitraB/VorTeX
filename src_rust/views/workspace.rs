@@ -6,6 +6,7 @@ pub fn render_toolbar(
     project_name: Option<String>,
     sidebar_visible: bool,
     is_building: bool,
+    theme_label: &str,
     on_back_to_projects: impl Fn(&mut Window, &mut App) + 'static + Clone,
     on_toggle_sidebar: impl Fn(&mut Window, &mut App) + 'static + Clone,
     on_open_file: impl Fn(&mut Window, &mut App) + 'static + Clone,
@@ -15,6 +16,7 @@ pub fn render_toolbar(
     on_build: impl Fn(&mut Window, &mut App) + 'static + Clone,
     on_insert_table: impl Fn(&mut Window, &mut App) + 'static + Clone,
     on_sync_pdf: impl Fn(&mut Window, &mut App) + 'static + Clone,
+    on_toggle_theme: impl Fn(&mut Window, &mut App) + 'static + Clone,
 ) -> impl IntoElement {
     let on_back = on_back_to_projects.clone();
     let on_toggle = on_toggle_sidebar.clone();
@@ -25,7 +27,9 @@ pub fn render_toolbar(
     let on_b = on_build.clone();
     let on_tbl = on_insert_table.clone();
     let on_sync = on_sync_pdf.clone();
+    let on_theme = on_toggle_theme.clone();
     let name = project_name.unwrap_or_else(|| "VorTeX Workspace".to_string());
+    let theme_label_str = theme_label.to_string();
 
     div()
         .h(px(48.0))
@@ -113,11 +117,32 @@ pub fn render_toolbar(
                 ),
         )
         .child(
-            // Right info
+            // Right info & Theme Toggle
             div()
                 .flex()
                 .items_center()
-                .gap_2()
+                .gap_2p5()
+                .child(
+                    div()
+                        .px_2p5()
+                        .py_1()
+                        .bg(Theme::bg_panel())
+                        .hover(|h| h.bg(Theme::bg_hover()))
+                        .border_1()
+                        .border_color(Theme::border_subtle())
+                        .rounded_md()
+                        .cursor_pointer()
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(Theme::text_primary())
+                        .h(px(30.0))
+                        .flex()
+                        .items_center()
+                        .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                            on_theme(window, cx);
+                        })
+                        .child(theme_label_str),
+                )
                 .child(
                     div()
                         .text_xs()

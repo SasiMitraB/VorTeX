@@ -20,7 +20,7 @@ pub fn render_pdf_preview(
 
     div()
         .size_full()
-        .bg(Theme::bg_editor())
+        .bg(Theme::pdf_backing_canvas())
         .flex()
         .flex_col()
         .items_center()
@@ -32,7 +32,7 @@ pub fn render_pdf_preview(
                 .w(px(520.0))
                 .bg(Theme::bg_card())
                 .border_1()
-                .border_color(Theme::border_subtle())
+                .border_color(Theme::pdf_page_border())
                 .rounded_xl()
                 .shadow_lg()
                 .overflow_hidden()
@@ -110,12 +110,12 @@ pub fn render_pdf_preview(
                                 .px_4()
                                 .py_2()
                                 .bg(Theme::accent_blue())
-                                .hover(|h| h.bg(hsla(207.0 / 360.0, 0.82, 0.75, 1.0)))
+                                .hover(|h| h.bg(Theme::border_focus()))
                                 .rounded_md()
                                 .cursor_pointer()
                                 .text_xs()
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(Theme::bg_titlebar())
+                                .text_color(Theme::text_inverted())
                                 .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                                     on_ext(path_str.clone(), window, cx);
                                 })

@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
-use crate::backend::{BackendClient, IndexStats, ProjectItem, SectionItem, TodoItem, TreeNode};
+use crate::backend::{BackendClient, IndexStats, ProjectItem, SectionItem, TableItem, TodoItem, TreeNode};
 use crate::services::synctex::SynctexForwardResult;
+use crate::theme::{detect_system_theme, ThemeMode, ThemePreference};
 use crate::views::pdf_viewer::SynctexHighlight;
 use std::collections::{HashMap, HashSet};
 
@@ -207,6 +208,7 @@ pub struct AppState {
     pub file_tree: Vec<TreeNode>,
     pub expanded_folders: HashSet<String>,
     pub outline_sections: Vec<SectionItem>,
+    pub outline_tables: Vec<TableItem>,
     pub todos: Vec<TodoItem>,
     pub index_stats: IndexStats,
     pub pane_left: PaneState,
@@ -214,10 +216,7 @@ pub struct AppState {
     pub active_pane: PaneSide,
     pub sidebar_visible: bool,
     pub sidebar_tab: SidebarTab,
-    pub table_editor_open: bool,
-    pub table_rows: usize,
-    pub table_cols: usize,
-    pub table_data: Vec<Vec<String>>,
+    pub table_scroll_handle: gpui::ScrollHandle,
     pub status_message: Option<String>,
     pub is_building: bool,
     pub next_untitled_num: usize,
@@ -225,18 +224,14 @@ pub struct AppState {
     pub sidebar_tree_scroll_handle: gpui::ScrollHandle,
     pub sidebar_outline_scroll_handle: gpui::ScrollHandle,
     pub sidebar_todo_scroll_handle: gpui::ScrollHandle,
-    pub table_scroll_handle: gpui::ScrollHandle,
     pub pdf_viewers: HashMap<String, PdfViewerState>,
     pub pdf_dpi: u32,
+    pub theme_mode: ThemeMode,
+    pub theme_preference: ThemePreference,
 }
 
 impl AppState {
     pub fn new(backend: BackendClient) -> Self {
-        let mut table_data = Vec::new();
-        for _ in 0..4 {
-            table_data.push(vec![String::new(); 3]);
-        }
-
         Self {
             backend,
             current_view: ViewMode::ProjectSelector,
@@ -246,6 +241,7 @@ impl AppState {
             file_tree: Vec::new(),
             expanded_folders: HashSet::new(),
             outline_sections: Vec::new(),
+            outline_tables: Vec::new(),
             todos: Vec::new(),
             index_stats: IndexStats::default(),
             pane_left: PaneState::default(),
@@ -253,10 +249,7 @@ impl AppState {
             active_pane: PaneSide::Left,
             sidebar_visible: true,
             sidebar_tab: SidebarTab::Explorer,
-            table_editor_open: false,
-            table_rows: 4,
-            table_cols: 3,
-            table_data,
+            table_scroll_handle: gpui::ScrollHandle::new(),
             status_message: None,
             is_building: false,
             next_untitled_num: 1,
@@ -264,9 +257,10 @@ impl AppState {
             sidebar_tree_scroll_handle: gpui::ScrollHandle::new(),
             sidebar_outline_scroll_handle: gpui::ScrollHandle::new(),
             sidebar_todo_scroll_handle: gpui::ScrollHandle::new(),
-            table_scroll_handle: gpui::ScrollHandle::new(),
             pdf_viewers: HashMap::new(),
             pdf_dpi: 144,
+            theme_mode: detect_system_theme(),
+            theme_preference: ThemePreference::Auto,
         }
     }
 

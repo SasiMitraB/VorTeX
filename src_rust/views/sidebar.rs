@@ -1,4 +1,4 @@
-use crate::backend::{SectionItem, TodoItem, TreeNode};
+use crate::backend::{SectionItem, TableItem, TodoItem, TreeNode};
 use crate::state::SidebarTab;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -10,6 +10,7 @@ pub fn render_sidebar(
     file_tree: &[TreeNode],
     expanded_folders: &HashSet<String>,
     outline_sections: &[SectionItem],
+    outline_tables: &[TableItem],
     todos: &[TodoItem],
     current_file_path: Option<&str>,
     tree_scroll_handle: &ScrollHandle,
@@ -19,6 +20,7 @@ pub fn render_sidebar(
     on_toggle_folder: impl Fn(String, &mut Window, &mut App) + 'static + Clone,
     on_open_file: impl Fn(String, &mut Window, &mut App) + 'static + Clone,
     on_jump_to_location: impl Fn(String, usize, &mut Window, &mut App) + 'static + Clone,
+    on_open_table: impl Fn(String, usize, usize, &mut Window, &mut App) + 'static + Clone,
 ) -> impl IntoElement {
     div()
         .h_full()
@@ -50,11 +52,13 @@ pub fn render_sidebar(
                     .into_any_element(),
                     SidebarTab::OutlineTodos => render_outline_todos_panel(
                         outline_sections,
+                        outline_tables,
                         todos,
                         current_file_path,
                         outline_scroll_handle,
                         todo_scroll_handle,
                         on_jump_to_location,
+                        on_open_table,
                     )
                     .into_any_element(),
                 }),
@@ -71,7 +75,7 @@ fn render_ribbon_bar(
     div()
         .w(px(46.0))
         .h_full()
-        .bg(Theme::bg_titlebar())
+        .bg(Theme::bg_ribbon())
         .border_r_1()
         .border_color(Theme::border_subtle())
         .flex()
@@ -132,6 +136,7 @@ fn render_ribbon_button(
         .child(
             div()
                 .text_base()
+                .text_color(if is_active { Theme::text_bright() } else { Theme::text_muted() })
                 .child(icon),
         )
 }
@@ -197,11 +202,13 @@ fn render_explorer_panel(
 
 fn render_outline_todos_panel(
     outline_sections: &[SectionItem],
+    outline_tables: &[TableItem],
     todos: &[TodoItem],
     current_file_path: Option<&str>,
     outline_scroll_handle: &ScrollHandle,
     todo_scroll_handle: &ScrollHandle,
     on_jump_to_location: impl Fn(String, usize, &mut Window, &mut App) + 'static + Clone,
+    on_open_table: impl Fn(String, usize, usize, &mut Window, &mut App) + 'static + Clone,
 ) -> impl IntoElement {
     div()
         .flex_1()
@@ -209,7 +216,7 @@ fn render_outline_todos_panel(
         .flex_col()
         .overflow_hidden()
         // ==========================================
-        // UPPER HALF: Project Outline
+        // 1. TOP: Project Outline
         // ==========================================
         .child(
             div()
@@ -312,7 +319,7 @@ fn render_outline_todos_panel(
                                                         .text_xs()
                                                         .font_weight(FontWeight::BOLD)
                                                         .text_color(if sec.level <= 1 {
-                                                            Theme::accent_blue()
+                                                             Theme::accent_blue()
                                                         } else if sec.level == 2 {
                                                             Theme::accent_purple()
                                                         } else {
@@ -337,6 +344,165 @@ fn render_outline_todos_panel(
                                                 .text_xs()
                                                 .text_color(Theme::text_dim())
                                                 .child(format!(":{}", sec.line)),
+                                        )
+                                        .into_any_element()
+                                })
+                                .collect()
+                        }),
+                ),
+        )
+        // ==========================================
+        // DIVIDER
+        // ==========================================
+        .child(
+            div()
+                .h(px(1.0))
+                .bg(Theme::border_subtle()),
+        )
+        // ==========================================
+        // 2. MIDDLE: Tables List
+        // ==========================================
+        .child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                // Header
+                .child(
+                    div()
+                        .px_3()
+                        .py_2()
+                        .bg(Theme::bg_titlebar())
+                        .border_b_1()
+                        .border_color(Theme::border_subtle())
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(Theme::text_dim())
+                                        .child("TABLES"),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .px_1p5()
+                                .py_0p5()
+                                .bg(Theme::bg_card())
+                                .rounded_sm()
+                                .text_xs()
+                                .text_color(Theme::accent_cyan())
+                                .child(format!("{}", outline_tables.len())),
+                        ),
+                )
+                // Tables List
+                .child(
+                    div()
+                        .id("sidebar_tables_scroll")
+                        .flex_1()
+                        .overflow_y_scroll()
+                        .py_1()
+                        .children(if outline_tables.is_empty() {
+                            vec![
+                                div()
+                                    .px_3()
+                                    .py_4()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(Theme::text_dim())
+                                            .child("No tables found"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(Theme::text_dim())
+                                            .child("(e.g. \\begin{table} or \\begin{tabular})"),
+                                    )
+                                    .into_any_element(),
+                            ]
+                        } else {
+                            outline_tables
+                                .iter()
+                                .map(|tbl| {
+                                    let tbl_file = tbl.file.clone();
+                                    let b_start = tbl.byte_start;
+                                    let b_end = tbl.byte_end;
+                                    let on_open = on_open_table.clone();
+                                    let is_in_current_file = current_file_path.map(|p| p == tbl.file).unwrap_or(false);
+
+                                    let title = if let Some(ref cap) = tbl.caption {
+                                        cap.clone()
+                                    } else if let Some(ref lbl) = tbl.label {
+                                        lbl.clone()
+                                    } else {
+                                        format!("Table (line {})", tbl.line)
+                                    };
+
+                                    div()
+                                        .px_2()
+                                        .py_1p5()
+                                        .mx_1()
+                                        .my_0p5()
+                                        .rounded_sm()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_0p5()
+                                        .cursor_pointer()
+                                        .hover(|h| h.bg(Theme::bg_hover()))
+                                        .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                                            on_open(tbl_file.clone(), b_start, b_end, window, cx);
+                                        })
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .justify_between()
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap_1p5()
+                                                        .overflow_hidden()
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .text_color(Theme::accent_cyan())
+                                                                .child("📊"),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .font_weight(FontWeight::MEDIUM)
+                                                                .text_color(if is_in_current_file {
+                                                                    Theme::text_bright()
+                                                                } else {
+                                                                    Theme::text_primary()
+                                                                })
+                                                                .overflow_hidden()
+                                                                .child(title),
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(Theme::text_dim())
+                                                        .child(format!("{}:{}", tbl.filename, tbl.line)),
+                                                ),
                                         )
                                         .into_any_element()
                                 })
