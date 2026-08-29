@@ -12,7 +12,16 @@ pub use crate::services::fs_utils::{build_tree, get_config_val, scan_projects, s
 pub use crate::services::fuzzy_matcher::{FuzzyMatchResult, Matcher};
 #[allow(unused_imports)]
 pub use crate::services::latex_parser::{LabelItem, SectionItem};
+#[allow(unused_imports)]
+pub use crate::services::pdf_renderer::{
+    ensure_pdf_rendered, get_pdf_page_count, get_pdf_page_dimensions, is_cache_valid,
+};
 pub use crate::services::semantic_index::{IndexStats, SemanticIndex};
+#[allow(unused_imports)]
+pub use crate::services::synctex::{
+    is_synctex_available, synctex_forward_search, synctex_inverse_search, SynctexForwardResult,
+    SynctexInverseResult,
+};
 
 pub type FileChangeCallback = Arc<dyn Fn(FileChangeEvent) + Send + Sync + 'static>;
 pub type IndexReadyCallback = Arc<dyn Fn(IndexStats) + Send + Sync + 'static>;

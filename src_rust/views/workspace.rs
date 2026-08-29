@@ -14,6 +14,7 @@ pub fn render_toolbar(
     on_save: impl Fn(&mut Window, &mut App) + 'static + Clone,
     on_build: impl Fn(&mut Window, &mut App) + 'static + Clone,
     on_insert_table: impl Fn(&mut Window, &mut App) + 'static + Clone,
+    on_sync_pdf: impl Fn(&mut Window, &mut App) + 'static + Clone,
 ) -> impl IntoElement {
     let on_back = on_back_to_projects.clone();
     let on_toggle = on_toggle_sidebar.clone();
@@ -23,6 +24,7 @@ pub fn render_toolbar(
     let on_s = on_save.clone();
     let on_b = on_build.clone();
     let on_tbl = on_insert_table.clone();
+    let on_sync = on_sync_pdf.clone();
     let name = project_name.unwrap_or_else(|| "VorTeX Workspace".to_string());
 
     div()
@@ -90,6 +92,24 @@ pub fn render_toolbar(
                 )
                 .child(
                     toolbar_btn("⊞ Table", on_tbl)
+                )
+                .child(
+                    div()
+                        .px_2p5()
+                        .py_1()
+                        .bg(Theme::bg_panel())
+                        .hover(|h| h.bg(Theme::bg_hover()))
+                        .border_1()
+                        .border_color(Theme::border_subtle())
+                        .rounded_md()
+                        .cursor_pointer()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(Theme::accent_blue())
+                        .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
+                            on_sync(window, cx);
+                        })
+                        .child("⇄ Sync PDF")
                 ),
         )
         .child(

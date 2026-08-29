@@ -228,7 +228,7 @@ pub fn render_project_selector(
                                                 .items_center()
                                                 .justify_center()
                                                 .child(
-                                                    img(img_path)
+                                                    img(std::path::PathBuf::from(&img_path))
                                                         .w_full()
                                                         .h_full()
                                                         .object_fit(gpui::ObjectFit::Cover),

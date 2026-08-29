@@ -80,11 +80,11 @@ pub fn build_latex_project(tex_file_path: &str) -> BuildResult {
         .output();
 
     // Step 2: Building from scratch:
-    // latexmk -pdf -interaction=nonstopmode -file-line-error "$file"
+    // latexmk -pdf -interaction=nonstopmode -file-line-error -synctex=1 "$file"
     let build_output = Command::new("latexmk")
         .env("PATH", &path_env)
         .current_dir(dir)
-        .args(["-pdf", "-interaction=nonstopmode", "-file-line-error"])
+        .args(["-pdf", "-interaction=nonstopmode", "-file-line-error", "-synctex=1"])
         .arg(file_name)
         .output();
 

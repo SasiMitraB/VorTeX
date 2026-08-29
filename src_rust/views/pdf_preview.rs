@@ -3,6 +3,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 
+#[allow(dead_code)]
 pub fn render_pdf_preview(
     pdf_path: &str,
     on_open_external: impl Fn(String, &mut Window, &mut App) + 'static + Clone,
@@ -49,7 +50,7 @@ pub fn render_pdf_preview(
                             .justify_center()
                             .p_3()
                             .child(
-                                img(img_path)
+                                img(std::path::PathBuf::from(&img_path))
                                     .w_full()
                                     .h_full()
                                     .object_fit(gpui::ObjectFit::Contain),

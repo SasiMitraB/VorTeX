@@ -12,7 +12,9 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use theme::Theme;
 use views::editor::LatexEditor;
+#[allow(unused_imports)]
 use views::pdf_preview::render_pdf_preview;
+use views::pdf_viewer::render_pdf_viewer;
 use views::project_selector::render_project_selector;
 use views::sidebar::render_sidebar;
 use views::status_bar::render_status_bar;
@@ -33,6 +35,21 @@ enum BackendEvent {
     FileChange(FileChangeEvent),
     IndexReady(IndexStats),
     BuildFinished(crate::services::compiler::BuildResult),
+    PdfRenderFinished {
+        pdf_path: String,
+        page_count: usize,
+        dims: (f32, f32),
+        cache: Option<crate::services::pdf_renderer::PdfRenderCache>,
+        error: Option<String>,
+    },
+    SynctexForwardFinished {
+        pdf_path: String,
+        line: usize,
+        result: Option<crate::services::synctex::SynctexForwardResult>,
+    },
+    SynctexInverseFinished {
+        result: Option<crate::services::synctex::SynctexInverseResult>,
+    },
 }
 
 impl VorTexApp {
@@ -125,6 +142,10 @@ impl VorTexApp {
     pub fn open_file_in_active_pane(&mut self, path: String, content: String, cx: &mut Context<Self>) {
         let is_pdf = path.to_lowercase().ends_with(".pdf");
         self.state.open_or_switch_file(path.clone(), content.clone());
+
+        if is_pdf {
+            self.spawn_pdf_render_if_needed(path.clone(), cx);
+        }
 
         if !is_pdf {
             let active_editor = match self.state.active_pane {
@@ -233,6 +254,279 @@ impl VorTexApp {
         None
     }
 
+    pub fn resolve_pdf_path(&self) -> Option<String> {
+        // 1. If active tab is PDF, use it
+        if let Some(tab) = self.state.active_tab() {
+            if tab.tab_type == TabType::Pdf {
+                if let Some(ref p) = tab.path {
+                    return Some(p.clone());
+                }
+            }
+        }
+        // 2. Check any open PDF tab
+        for pane in [&self.state.pane_left, &self.state.pane_right] {
+            for tab in &pane.tabs {
+                if tab.tab_type == TabType::Pdf {
+                    if let Some(ref p) = tab.path {
+                        if std::path::Path::new(p).exists() {
+                            return Some(p.clone());
+                        }
+                    }
+                }
+            }
+        }
+        // 3. Try to derive from build target (same stem .pdf)
+        if let Some(tex_path) = self.resolve_build_target() {
+            let tex_p = std::path::Path::new(&tex_path);
+            if let Some(stem) = tex_p.file_stem().and_then(|s| s.to_str()) {
+                if let Some(parent) = tex_p.parent() {
+                    let pdf_candidate = parent.join(format!("{}.pdf", stem));
+                    if pdf_candidate.exists() {
+                        return Some(pdf_candidate.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+        // 4. Current project main.pdf
+        if let Some(ref proj) = self.state.current_project {
+            let main_pdf = std::path::Path::new(proj).join("main.pdf");
+            if main_pdf.exists() {
+                return Some(main_pdf.to_string_lossy().to_string());
+            }
+            if let Some(found) = crate::services::fs_utils::find_project_pdf(std::path::Path::new(proj)) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// Spawn background PDF render if needed (non-blocking)
+    pub fn spawn_pdf_render_if_needed(&mut self, pdf_path: String, cx: &mut Context<Self>) {
+        // Quick prepare check on main thread (fast, no heavy pdftoppm)
+        let needs = self.state.prepare_pdf_viewer_async(&pdf_path);
+        if !needs {
+            return;
+        }
+        // Already marked as is_rendering in prepare
+        let tx = self.event_tx.clone();
+        let dpi = self.state.pdf_dpi;
+        cx.background_executor()
+            .spawn(async move {
+                // Heavy work off main thread
+                let page_count = crate::services::pdf_renderer::get_pdf_page_count(&pdf_path).unwrap_or(0);
+                let dims = crate::services::pdf_renderer::get_pdf_page_dimensions(&pdf_path)
+                    .unwrap_or((595.276, 841.89));
+                let cache = crate::services::pdf_renderer::ensure_pdf_rendered(&pdf_path, dpi);
+                let result = if cache.is_some() {
+                    Ok((page_count, dims, cache))
+                } else if page_count == 0 {
+                    Err("Failed to render PDF - pdfinfo returned 0 pages".to_string())
+                } else {
+                    // Cache may be None even if page_count>0 if rendering failed
+                    Err("pdftoppm rendering failed".to_string())
+                };
+                match result {
+                    Ok((pc, d, c)) => {
+                        let _ = tx.send(BackendEvent::PdfRenderFinished {
+                            pdf_path,
+                            page_count: pc,
+                            dims: d,
+                            cache: c,
+                            error: None,
+                        });
+                    }
+                    Err(e) => {
+                        let _ = tx.send(BackendEvent::PdfRenderFinished {
+                            pdf_path,
+                            page_count,
+                            dims,
+                            cache: None,
+                            error: Some(e),
+                        });
+                    }
+                }
+            })
+            .detach();
+        self.state.status_message = Some("Rendering PDF...".to_string());
+        cx.notify();
+    }
+
+    pub fn forward_sync_to_pdf(&mut self, cx: &mut Context<Self>) {
+        // Get editor cursor and file path from active pane's editor
+        let (cursor_row, cursor_col, file_path_opt) = {
+            let editor = match self.state.active_pane {
+                PaneSide::Left => &self.editor_left,
+                PaneSide::Right => &self.editor_right,
+            };
+            let ed = editor.read(cx);
+            (ed.cursor_row, ed.cursor_col, ed.current_file_path.clone())
+        };
+
+        let tex_path = if let Some(p) = file_path_opt {
+            p
+        } else if let Some(t) = self.resolve_build_target() {
+            t
+        } else {
+            self.state.status_message = Some("No source file for SyncTeX forward search".to_string());
+            cx.notify();
+            return;
+        };
+
+        let pdf_path = match self.resolve_pdf_path() {
+            Some(p) => p,
+            None => {
+                self.state.status_message = Some("No PDF found. Build first.".to_string());
+                cx.notify();
+                return;
+            }
+        };
+
+        // Ensure viewer entry exists (lightweight)
+        self.state.get_or_create_pdf_viewer(&pdf_path);
+        // Trigger async render if needed to ensure PDF is viewable
+        self.spawn_pdf_render_if_needed(pdf_path.clone(), cx);
+
+        // 1-based line for synctex
+        let line = cursor_row + 1;
+        let col = cursor_col;
+        let col_arg = col;
+        let page_hint = self
+            .state
+            .pdf_viewers
+            .get(&pdf_path)
+            .map(|v| v.current_page)
+            .unwrap_or(0);
+
+        // Mark syncing state
+        if let Some(v) = self.state.pdf_viewers.get_mut(&pdf_path) {
+            v.is_syncing = true;
+        }
+        self.state.status_message = Some(format!("SyncTeX → page ? (line {})...", line));
+        cx.notify();
+
+        // Spawn background SyncTeX forward search
+        let tx = self.event_tx.clone();
+        let tex_clone = tex_path.clone();
+        let pdf_clone = pdf_path.clone();
+        cx.background_executor()
+            .spawn(async move {
+                let result = crate::services::synctex::synctex_forward_search(
+                    &tex_clone, line, col_arg, &pdf_clone, page_hint,
+                );
+                let _ = tx.send(BackendEvent::SynctexForwardFinished {
+                    pdf_path: pdf_clone,
+                    line,
+                    result,
+                });
+            })
+            .detach();
+    }
+
+    pub fn handle_synctex_forward_result(
+        &mut self,
+        pdf_path: String,
+        line: usize,
+        result: Option<crate::services::synctex::SynctexForwardResult>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(v) = self.state.pdf_viewers.get_mut(&pdf_path) {
+            v.is_syncing = false;
+        }
+        match result {
+            Some(res) => {
+                let page = res.page;
+                self.state.status_message = Some(format!("SyncTeX → page {} (line {})", page, line));
+                // Switch right pane to PDF if not already visible
+                let is_open_left = self.state.pane_left.tabs.iter().any(|t| t.path.as_deref() == Some(&pdf_path));
+                let is_open_right = self.state.pane_right.tabs.iter().any(|t| t.path.as_deref() == Some(&pdf_path));
+                if !is_open_left && !is_open_right {
+                    let id = self.state.generate_tab_id();
+                    let name = std::path::Path::new(&pdf_path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Output.pdf")
+                        .to_string();
+                    self.state.pane_right.tabs.push(state::Tab::new_pdf(id.clone(), name, pdf_path.clone()));
+                    self.state.pane_right.active_tab_id = Some(id);
+                    self.state.active_pane = PaneSide::Right;
+                    self.spawn_pdf_render_if_needed(pdf_path.clone(), cx);
+                } else if is_open_left && !is_open_right {
+                    self.state.active_pane = PaneSide::Left;
+                } else if is_open_right {
+                    self.state.active_pane = PaneSide::Right;
+                    if let Some(tab) = self.state.pane_right.tabs.iter().find(|t| t.path.as_deref() == Some(&pdf_path)) {
+                        let id = tab.id.clone();
+                        self.state.pane_right.switch_tab(&id);
+                    }
+                }
+                if let Some(viewer) = self.state.pdf_viewers.get_mut(&pdf_path) {
+                    viewer.set_highlight_from_forward(res);
+                }
+                cx.notify();
+            }
+            None => {
+                self.state.status_message = Some(format!("SyncTeX forward: no result for line {}", line));
+                cx.notify();
+            }
+        }
+    }
+
+    pub fn spawn_inverse_search(
+        &mut self,
+        pdf_path: String,
+        page: usize,
+        x: f32,
+        y: f32,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.status_message = Some(format!("SyncTeX ← querying page {}...", page));
+        cx.notify();
+        let tx = self.event_tx.clone();
+        cx.background_executor()
+            .spawn(async move {
+                let result =
+                    crate::services::synctex::synctex_inverse_search(&pdf_path, page, x, y);
+                let _ = tx.send(BackendEvent::SynctexInverseFinished { result });
+            })
+            .detach();
+    }
+
+    pub fn handle_inverse_search(
+        &mut self,
+        result: crate::services::synctex::SynctexInverseResult,
+        cx: &mut Context<Self>,
+    ) {
+        let input_path = result.input.clone();
+        let line = result.line;
+        let col = result.column;
+
+        // Try to open the file (if not already open)
+        let content = self
+            .state
+            .backend
+            .read_file(&input_path)
+            .unwrap_or_default();
+
+        // Open or switch to this file in active pane (prefer left)
+        let _prev_pane = self.state.active_pane;
+        self.state.active_pane = PaneSide::Left;
+        self.open_file_in_active_pane(input_path.clone(), content, cx);
+        self.state.active_pane = PaneSide::Left;
+
+        // Jump editor to line
+        self.editor_left.update(cx, |ed, _cx| {
+            ed.jump_to_line(line);
+            // Try to set column if available
+            if col > 0 {
+                let max_col = ed.current_line_len();
+                ed.cursor_col = col.min(max_col);
+            }
+        });
+
+        self.state.status_message = Some(format!("SyncTeX ← {}:{}", input_path, line));
+        cx.notify();
+    }
+
     pub fn build_current_project(&mut self, cx: &mut Context<Self>) {
         if self.state.is_building {
             return;
@@ -271,49 +565,101 @@ impl VorTexApp {
             .detach();
     }
 
-    pub fn process_background_events(&mut self) {
-        if let Ok(rx_lock) = self.event_rx.lock() {
+    pub fn process_background_events(&mut self, cx: &mut Context<Self>) {
+        // Drain events without holding lock during handling
+        let events: Vec<BackendEvent> = if let Ok(rx_lock) = self.event_rx.lock() {
+            let mut evs = Vec::new();
             while let Ok(ev) = rx_lock.try_recv() {
-                match ev {
-                    BackendEvent::FileChange(change) => {
-                        self.state.status_message = Some(format!("File {}: {}", change.change_type, change.path));
+                evs.push(ev);
+            }
+            evs
+        } else {
+            Vec::new()
+        };
+
+        for ev in events {
+            match ev {
+                BackendEvent::FileChange(change) => {
+                    self.state.status_message = Some(format!("File {}: {}", change.change_type, change.path));
+                    if change.path.to_lowercase().ends_with(".pdf") {
+                        if let Some(v) = self.state.pdf_viewers.get_mut(&change.path) {
+                            v.last_render_mtime = None;
+                            v.is_rendering = false;
+                        }
                     }
-                    BackendEvent::IndexReady(stats) => {
-                        self.state.index_stats = stats;
-                        self.state.status_message = Some("Semantic index ready".to_string());
-                    }
-                    BackendEvent::BuildFinished(result) => {
-                        self.state.is_building = false;
-                        self.state.status_message = Some(result.message.clone());
+                }
+                BackendEvent::IndexReady(stats) => {
+                    self.state.index_stats = stats;
+                    self.state.status_message = Some("Semantic index ready".to_string());
+                }
+                BackendEvent::BuildFinished(result) => {
+                    self.state.is_building = false;
+                    self.state.status_message = Some(result.message.clone());
 
-                        if result.success {
-                            // Refresh project file tree to show newly generated files
-                            if let Some(ref proj) = self.state.current_project {
-                                if let Ok(tree) = self.state.backend.read_tree(proj) {
-                                    self.state.file_tree = tree;
-                                }
-                            }
-
-                            if let Some(ref pdf_path) = result.pdf_path {
-                                // If PDF preview is open in either pane, or if right pane is empty, open preview
-                                let is_open_left = self.state.pane_left.tabs.iter().any(|t| t.path.as_deref() == Some(pdf_path));
-                                let is_open_right = self.state.pane_right.tabs.iter().any(|t| t.path.as_deref() == Some(pdf_path));
-
-                                if is_open_left || is_open_right {
-                                    // Already open in tabs
-                                } else if self.state.pane_right.tabs.is_empty() {
-                                    // Open in right pane for side-by-side view
-                                    let id = self.state.generate_tab_id();
-                                    let name = std::path::Path::new(pdf_path)
-                                        .file_name()
-                                        .and_then(|n| n.to_str())
-                                        .unwrap_or("Output.pdf")
-                                        .to_string();
-                                    self.state.pane_right.tabs.push(state::Tab::new_pdf(id.clone(), name, pdf_path.clone()));
-                                    self.state.pane_right.active_tab_id = Some(id);
-                                }
+                    if result.success {
+                        if let Some(ref proj) = self.state.current_project {
+                            if let Ok(tree) = self.state.backend.read_tree(proj) {
+                                self.state.file_tree = tree;
                             }
                         }
+
+                        if let Some(ref pdf_path) = result.pdf_path {
+                            if let Some(v) = self.state.pdf_viewers.get_mut(pdf_path) {
+                                v.last_render_mtime = None;
+                                v.is_rendering = false;
+                            }
+                            // Defer actual rendering to next render's async spawn
+                            let is_open_left = self.state.pane_left.tabs.iter().any(|t| t.path.as_deref() == Some(pdf_path));
+                            let is_open_right = self.state.pane_right.tabs.iter().any(|t| t.path.as_deref() == Some(pdf_path));
+
+                            if is_open_left || is_open_right {
+                                // Already open - will be re-rendered async on next frame
+                            } else if self.state.pane_right.tabs.is_empty() {
+                                let id = self.state.generate_tab_id();
+                                let name = std::path::Path::new(pdf_path)
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("Output.pdf")
+                                    .to_string();
+                                self.state.pane_right.tabs.push(state::Tab::new_pdf(id.clone(), name, pdf_path.clone()));
+                                self.state.pane_right.active_tab_id = Some(id);
+                                // Prepare placeholder
+                                self.state.get_or_create_pdf_viewer(pdf_path);
+                            }
+                            cx.notify();
+                        }
+                    }
+                    cx.notify();
+                }
+                BackendEvent::PdfRenderFinished {
+                    pdf_path,
+                    page_count,
+                    dims,
+                    cache,
+                    error,
+                } => {
+                    if let Some(err) = error {
+                        self.state.fail_pdf_render(&pdf_path, err.clone());
+                        self.state.status_message = Some(format!("PDF render failed: {}", err));
+                    } else {
+                        self.state.finish_pdf_render(&pdf_path, cache, page_count, dims);
+                        self.state.status_message = Some(format!("PDF rendered: {} pages", page_count));
+                    }
+                    cx.notify();
+                }
+                BackendEvent::SynctexForwardFinished {
+                    pdf_path,
+                    line,
+                    result,
+                } => {
+                    self.handle_synctex_forward_result(pdf_path, line, result, cx);
+                }
+                BackendEvent::SynctexInverseFinished { result } => {
+                    if let Some(inv) = result {
+                        self.handle_inverse_search(inv, cx);
+                    } else {
+                        self.state.status_message = Some("SyncTeX inverse: no result".to_string());
+                        cx.notify();
                     }
                 }
             }
@@ -323,7 +669,7 @@ impl VorTexApp {
 
 impl Render for VorTexApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.process_background_events();
+        self.process_background_events(cx);
 
         let current_view = self.state.current_view;
         let view_handle = cx.entity().clone();
@@ -392,6 +738,28 @@ impl Render for VorTexApp {
                 let table_modal = self.table_modal.default_clone();
                 let table_scroll = self.state.table_scroll_handle.clone();
 
+                // Ensure PDF viewers are prepared; spawn async render if needed (non-blocking)
+                {
+                    let mut to_ensure = Vec::new();
+                    if let Some(ref tab) = left_active_tab {
+                        if tab.tab_type == TabType::Pdf {
+                            if let Some(ref p) = tab.path {
+                                to_ensure.push(p.clone());
+                            }
+                        }
+                    }
+                    if let Some(ref tab) = right_active_tab {
+                        if tab.tab_type == TabType::Pdf {
+                            if let Some(ref p) = tab.path {
+                                to_ensure.push(p.clone());
+                            }
+                        }
+                    }
+                    for pdf_path in to_ensure {
+                        self.spawn_pdf_render_if_needed(pdf_path, cx);
+                    }
+                }
+
                 let stats = self.state.index_stats.clone();
                 let cursor_r = self.editor_left.read(cx).cursor_row;
                 let cursor_c = self.editor_left.read(cx).cursor_col;
@@ -444,6 +812,20 @@ impl Render for VorTexApp {
                 let v_tbl_ac = view_handle.clone();
                 let v_tbl_rc = view_handle.clone();
 
+                let v_left_zoom_in = view_handle.clone();
+                let v_left_zoom_out = view_handle.clone();
+                let v_left_zoom_reset = view_handle.clone();
+                let v_left_reload = view_handle.clone();
+                let v_left_inverse = view_handle.clone();
+
+                let v_right_zoom_in = view_handle.clone();
+                let v_right_zoom_out = view_handle.clone();
+                let v_right_zoom_reset = view_handle.clone();
+                let v_right_reload = view_handle.clone();
+                let v_right_inverse = view_handle.clone();
+
+                let v_sync_forward = view_handle.clone();
+
                 div()
                     .size_full()
                     .bg(Theme::bg_app())
@@ -453,6 +835,7 @@ impl Render for VorTexApp {
                     .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
                         let key = event.keystroke.key.as_str();
                         let is_cmd = event.keystroke.modifiers.platform || event.keystroke.modifiers.control;
+                        let is_shift = event.keystroke.modifiers.shift;
 
                         if is_cmd {
                             match key {
@@ -472,8 +855,22 @@ impl Render for VorTexApp {
                                         cx.notify();
                                     }
                                 }
+                                "j" => {
+                                    // Forward SyncTeX: editor -> PDF (Cmd+J, Cmd+Shift+J both)
+                                    this.forward_sync_to_pdf(cx);
+                                }
+                                "g" => {
+                                    // Also support Cmd+G for forward sync
+                                    if is_shift {
+                                        this.forward_sync_to_pdf(cx);
+                                    }
+                                }
                                 _ => {}
                             }
+                        }
+                        // Also handle Cmd+Shift+J without relying on key match above? Already covered
+                        if is_cmd && is_shift && key == "j" {
+                            this.forward_sync_to_pdf(cx);
                         }
                     }))
                     .child(
@@ -539,6 +936,11 @@ impl Render for VorTexApp {
                                 v_table.update(cx, |this, cx| {
                                     this.table_modal.is_open = true;
                                     cx.notify();
+                                });
+                            },
+                            move |_window, cx| {
+                                v_sync_forward.update(cx, |this, cx| {
+                                    this.forward_sync_to_pdf(cx);
                                 });
                             },
                         ),
@@ -644,16 +1046,106 @@ impl Render for VorTexApp {
                                             .child(
                                                 div()
                                                     .flex_1()
+                                                    .size_full()
+                                                    .overflow_hidden()
                                                     .flex()
+                                                    .flex_col()
                                                     .child(if let Some(tab) = left_active_tab {
                                                         match tab.tab_type {
                                                             TabType::Text => ed_left.into_any_element(),
-                                                            TabType::Pdf => render_pdf_preview(
-                                                                tab.path.as_deref().unwrap_or(""),
-                                                                |path, _window, _cx| {
-                                                                    let _ = open::that(path);
-                                                                },
-                                                            ).into_any_element(),
+                                                            TabType::Pdf => {
+                                                                let pdf_path = tab.path.clone().unwrap_or_default();
+                                                                let viewer = self.state.pdf_viewers.get(&pdf_path).cloned();
+                                                                let (page_images, page_count, zoom, highlight, scroll_handle, pw, ph, is_rendering) = if let Some(v) = viewer {
+                                                                    (v.page_images.clone(), v.page_count, v.zoom, v.highlight.clone(), v.scroll_handle.clone(), v.page_width_pts, v.page_height_pts, v.is_rendering)
+                                                                } else {
+                                                                    (Vec::new(), 0, 1.0, None, gpui::ScrollHandle::new(), 595.276, 841.89, false)
+                                                                };
+                                                                let p1 = pdf_path.clone();
+                                                                let p2 = pdf_path.clone();
+                                                                let p3 = pdf_path.clone();
+                                                                let p4 = pdf_path.clone();
+                                                                let p5 = pdf_path.clone();
+                                                                render_pdf_viewer(
+                                                                    &pdf_path,
+                                                                    &page_images,
+                                                                    page_count,
+                                                                    zoom,
+                                                                    highlight,
+                                                                    &scroll_handle,
+                                                                    pw,
+                                                                    ph,
+                                                                    sidebar_vis,
+                                                                    has_right_pane,
+                                                                    false,
+                                                                    {
+                                                                        let pdf = p1.clone();
+                                                                        let v = v_left_zoom_in.clone();
+                                                                        move |_w, cx| {
+                                                                            v.update(cx, |this, cx| {
+                                                                                if let Some(viewer) = this.state.pdf_viewers.get_mut(&pdf) {
+                                                                                    viewer.zoom_in();
+                                                                                    cx.notify();
+                                                                                }
+                                                                            });
+                                                                        }
+                                                                    },
+                                                                    {
+                                                                        let pdf = p2.clone();
+                                                                        let v = v_left_zoom_out.clone();
+                                                                        move |_w, cx| {
+                                                                            v.update(cx, |this, cx| {
+                                                                                if let Some(viewer) = this.state.pdf_viewers.get_mut(&pdf) {
+                                                                                    viewer.zoom_out();
+                                                                                    cx.notify();
+                                                                                }
+                                                                            });
+                                                                        }
+                                                                    },
+                                                                    {
+                                                                        let pdf = p3.clone();
+                                                                        let v = v_left_zoom_reset.clone();
+                                                                        move |_w, cx| {
+                                                                            v.update(cx, |this, cx| {
+                                                                                if let Some(viewer) = this.state.pdf_viewers.get_mut(&pdf) {
+                                                                                    viewer.zoom_reset();
+                                                                                    cx.notify();
+                                                                                }
+                                                                            });
+                                                                        }
+                                                                    },
+                                                                    {
+                                                                        let pdf = p4.clone();
+                                                                        let v = v_left_reload.clone();
+                                                                        move |_w, cx| {
+                                                                            v.update(cx, |this, cx| {
+                                                                                crate::services::pdf_renderer::clear_pdf_cache(&pdf);
+                                                                                if let Some(viewer) = this.state.pdf_viewers.get_mut(&pdf) {
+                                                                                    viewer.last_render_mtime = None;
+                                                                                    viewer.is_rendering = false;
+                                                                                    viewer.render_error = None;
+                                                                                }
+                                                                                this.spawn_pdf_render_if_needed(pdf.clone(), cx);
+                                                                            });
+                                                                        }
+                                                                    },
+                                                                    {
+                                                                        let pdf = p5.clone();
+                                                                        move |_w, _cx| {
+                                                                            let _ = open::that(&pdf);
+                                                                        }
+                                                                    },
+                                                                    {
+                                                                        let v = v_left_inverse.clone();
+                                                                        move |pdf_path, page, x, y, _win, cx| {
+                                                                            v.update(cx, |this, cx| {
+                                                                                this.spawn_inverse_search(pdf_path, page, x, y, cx);
+                                                                            });
+                                                                        }
+                                                                    },
+                                                                    is_rendering,
+                                                                ).into_any_element()
+                                                            }
                                                         }
                                                     } else {
                                                         empty_pane_placeholder()
@@ -717,16 +1209,106 @@ impl Render for VorTexApp {
                                                 .child(
                                                     div()
                                                         .flex_1()
+                                                        .size_full()
+                                                        .overflow_hidden()
                                                         .flex()
+                                                        .flex_col()
                                                         .child(if let Some(tab) = right_active_tab {
                                                             match tab.tab_type {
                                                                 TabType::Text => right_ed.into_any_element(),
-                                                                TabType::Pdf => render_pdf_preview(
-                                                                    tab.path.as_deref().unwrap_or(""),
-                                                                    |path, _window, _cx| {
-                                                                        let _ = open::that(path);
-                                                                    },
-                                                                ).into_any_element(),
+                                                                TabType::Pdf => {
+                                                                    let pdf_path = tab.path.clone().unwrap_or_default();
+                                                                    let viewer = self.state.pdf_viewers.get(&pdf_path).cloned();
+                                                                    let (page_images, page_count, zoom, highlight, scroll_handle, pw, ph, is_rendering) = if let Some(v) = viewer {
+                                                                        (v.page_images.clone(), v.page_count, v.zoom, v.highlight.clone(), v.scroll_handle.clone(), v.page_width_pts, v.page_height_pts, v.is_rendering)
+                                                                    } else {
+                                                                        (Vec::new(), 0, 1.0, None, gpui::ScrollHandle::new(), 595.276, 841.89, false)
+                                                                    };
+                                                                    let p1 = pdf_path.clone();
+                                                                    let p2 = pdf_path.clone();
+                                                                    let p3 = pdf_path.clone();
+                                                                    let p4 = pdf_path.clone();
+                                                                    let p5 = pdf_path.clone();
+                                                                    render_pdf_viewer(
+                                                                        &pdf_path,
+                                                                        &page_images,
+                                                                        page_count,
+                                                                        zoom,
+                                                                        highlight,
+                                                                        &scroll_handle,
+                                                                        pw,
+                                                                        ph,
+                                                                        sidebar_vis,
+                                                                        has_right_pane,
+                                                                        true,
+                                                                        {
+                                                                            let pdf = p1.clone();
+                                                                            let v = v_right_zoom_in.clone();
+                                                                            move |_w, cx| {
+                                                                                v.update(cx, |this, cx| {
+                                                                                    if let Some(viewer) = this.state.pdf_viewers.get_mut(&pdf) {
+                                                                                        viewer.zoom_in();
+                                                                                        cx.notify();
+                                                                                    }
+                                                                                });
+                                                                            }
+                                                                        },
+                                                                        {
+                                                                            let pdf = p2.clone();
+                                                                            let v = v_right_zoom_out.clone();
+                                                                            move |_w, cx| {
+                                                                                v.update(cx, |this, cx| {
+                                                                                    if let Some(viewer) = this.state.pdf_viewers.get_mut(&pdf) {
+                                                                                        viewer.zoom_out();
+                                                                                        cx.notify();
+                                                                                    }
+                                                                                });
+                                                                            }
+                                                                        },
+                                                                        {
+                                                                            let pdf = p3.clone();
+                                                                            let v = v_right_zoom_reset.clone();
+                                                                            move |_w, cx| {
+                                                                                v.update(cx, |this, cx| {
+                                                                                    if let Some(viewer) = this.state.pdf_viewers.get_mut(&pdf) {
+                                                                                        viewer.zoom_reset();
+                                                                                        cx.notify();
+                                                                                    }
+                                                                                });
+                                                                            }
+                                                                        },
+                                                                        {
+                                                                            let pdf = p4.clone();
+                                                                            let v = v_right_reload.clone();
+                                                                            move |_w, cx| {
+                                                                                v.update(cx, |this, cx| {
+                                                                                    crate::services::pdf_renderer::clear_pdf_cache(&pdf);
+                                                                                    if let Some(viewer) = this.state.pdf_viewers.get_mut(&pdf) {
+                                                                                        viewer.last_render_mtime = None;
+                                                                                        viewer.is_rendering = false;
+                                                                                        viewer.render_error = None;
+                                                                                    }
+                                                                                    this.spawn_pdf_render_if_needed(pdf.clone(), cx);
+                                                                                });
+                                                                            }
+                                                                        },
+                                                                        {
+                                                                            let pdf = p5.clone();
+                                                                            move |_w, _cx| {
+                                                                                let _ = open::that(&pdf);
+                                                                            }
+                                                                        },
+                                                                        {
+                                                                            let v = v_right_inverse.clone();
+                                                                            move |pdf_path, page, x, y, _win, cx| {
+                                                                                v.update(cx, |this, cx| {
+                                                                                    this.spawn_inverse_search(pdf_path, page, x, y, cx);
+                                                                                });
+                                                                            }
+                                                                        },
+                                                                        is_rendering,
+                                                                    ).into_any_element()
+                                                                }
                                                             }
                                                         } else {
                                                             empty_pane_placeholder()

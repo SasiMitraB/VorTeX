@@ -120,10 +120,6 @@ pub fn build_tree(dir_path: &str) -> Vec<TreeNode> {
     nodes
 }
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-use std::process::Command;
-
 pub fn find_project_pdf(project_dir: &Path) -> Option<String> {
     if !project_dir.exists() || !project_dir.is_dir() {
         return None;
@@ -182,11 +178,8 @@ pub fn get_or_create_pdf_thumbnail(pdf_path: &str) -> Option<String> {
         return None;
     }
 
-    let mut hasher = DefaultHasher::new();
-    pdf_path.hash(&mut hasher);
-    let path_hash = hasher.finish();
-
-    let thumb_file_name = format!("{:016x}.png", path_hash);
+    let path_hash = crate::services::pdf_renderer::hash_pdf_key(pdf_path);
+    let thumb_file_name = format!("{}.png", path_hash);
     let thumb_path = cache_dir.join(&thumb_file_name);
 
     // Check if valid cached thumbnail exists and is newer than the PDF
@@ -200,72 +193,19 @@ pub fn get_or_create_pdf_thumbnail(pdf_path: &str) -> Option<String> {
         }
     }
 
-    let temp_subfolder = cache_dir.join(format!("tmp_{:016x}", path_hash));
-    let _ = fs::create_dir_all(&temp_subfolder);
+    // Render first page thumbnail via MuPDF in-process
+    let doc = mupdf::Document::open(pdf_path).ok()?;
+    let page = doc.load_page(0).ok()?;
+    let bounds = page.bounds().ok()?;
+    let max_dim = bounds.width().max(bounds.height()).max(1.0);
+    let scale = (600.0 / max_dim).clamp(0.1, 4.0);
+    let matrix = mupdf::Matrix::new_scale(scale, scale);
+    let colorspace = mupdf::Colorspace::device_rgb();
+    let pixmap = page.to_pixmap(&matrix, &colorspace, false, true).ok()?;
+    let thumb_str = thumb_path.to_str()?;
+    pixmap.save_as(thumb_str, mupdf::ImageFormat::PNG).ok()?;
 
-    let mut generated = false;
-
-    // Attempt 1: qlmanage (macOS QuickLook - fast native thumbnail generator)
-    if cfg!(target_os = "macos") || Path::new("/usr/bin/qlmanage").exists() {
-        if let Ok(output) = Command::new("qlmanage")
-            .args(["-t", "-s", "600", "-o"])
-            .arg(&temp_subfolder)
-            .arg(pdf_path)
-            .output()
-        {
-            if output.status.success() {
-                if let Ok(entries) = fs::read_dir(&temp_subfolder) {
-                    for entry in entries.flatten() {
-                        let ep = entry.path();
-                        if ep.extension().map(|e| e.eq_ignore_ascii_case("png")).unwrap_or(false) {
-                            if let Ok(meta) = fs::metadata(&ep) {
-                                if meta.len() > 0 {
-                                    if fs::rename(&ep, &thumb_path).is_ok() || fs::copy(&ep, &thumb_path).is_ok() {
-                                        generated = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Attempt 2: pdftoppm (poppler utility - cross-platform fallback)
-    if !generated {
-        let ppm_prefix = temp_subfolder.join("page");
-        if let Ok(output) = Command::new("pdftoppm")
-            .args(["-png", "-f", "1", "-l", "1", "-scale-to", "600"])
-            .arg(pdf_path)
-            .arg(&ppm_prefix)
-            .output()
-        {
-            if output.status.success() {
-                if let Ok(entries) = fs::read_dir(&temp_subfolder) {
-                    for entry in entries.flatten() {
-                        let ep = entry.path();
-                        if ep.extension().map(|e| e.eq_ignore_ascii_case("png")).unwrap_or(false) {
-                            if let Ok(meta) = fs::metadata(&ep) {
-                                if meta.len() > 0 {
-                                    if fs::rename(&ep, &thumb_path).is_ok() || fs::copy(&ep, &thumb_path).is_ok() {
-                                        generated = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Cleanup temporary subfolder
-    let _ = fs::remove_dir_all(&temp_subfolder);
-
-    if generated && thumb_path.exists() {
+    if thumb_path.exists() {
         Some(thumb_path.to_string_lossy().to_string())
     } else {
         None
