@@ -45,11 +45,11 @@ pub fn render_status_bar(
                         .items_center()
                         .gap_2()
                         .text_color(Theme::text_dim())
-                        .child(format!("🏷 {} labels", stats.labels))
+                        .child(format!("{} labels", stats.labels))
                         .child("•")
-                        .child(format!("📖 {} bib entries", stats.bibentries))
+                        .child(format!("{} bib entries", stats.bibentries))
                         .child("•")
-                        .child(format!("📁 {} files indexed", stats.files_indexed)),
+                        .child(format!("{} files indexed", stats.files_indexed)),
                 )
                 .child(
                     div()

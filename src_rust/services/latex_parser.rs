@@ -51,6 +51,15 @@ pub struct SectionItem {
     pub line: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TodoItem {
+    pub tag: String,
+    pub text: String,
+    pub file: String,
+    pub filename: String,
+    pub line: usize,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ParsedLatex {
     pub labels: Vec<LabelItem>,
@@ -58,6 +67,7 @@ pub struct ParsedLatex {
     pub refs: Vec<RefItem>,
     pub bibliographies: Vec<BibRef>,
     pub sections: Vec<SectionItem>,
+    pub todos: Vec<TodoItem>,
 }
 
 static SECTION_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -78,6 +88,10 @@ static REF_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 
 static BIB_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\\(?:bibliography|addbibresource)\s*\{([^}]+)\}").unwrap()
+});
+
+static TODO_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(?:^|[^\\])(?:%|//|#|\*)\s*(\[\s*\]|\[x\]|TODO|FIXME|NOTE|BUG|HACK|XXX|IDEA|OPTIMIZE|REVIEW)\s*(?::|-)?\s*(.*)").unwrap()
 });
 
 pub fn get_section_level(cmd: &str) -> usize {
@@ -185,6 +199,40 @@ pub fn parse_latex_file(file_path: &str, content: &str) -> ParsedLatex {
                     }
                 }
             }
+        }
+
+        // Extract TODO items / comments
+        if let Some(cap) = TODO_REGEX.captures(line) {
+            let raw_tag = cap.get(1).map(|m| m.as_str().trim()).unwrap_or("TODO");
+            let tag = match raw_tag {
+                s if s.starts_with('[') && s.ends_with(']') => {
+                    if s.contains('x') || s.contains('X') {
+                        "DONE".to_string()
+                    } else {
+                        "TODO".to_string()
+                    }
+                }
+                other => other.to_uppercase(),
+            };
+
+            let text = cap
+                .get(2)
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_default();
+
+            let final_text = if text.is_empty() {
+                format!("{} (line {})", tag, line_num)
+            } else {
+                text
+            };
+
+            result.todos.push(TodoItem {
+                tag,
+                text: final_text,
+                file: file_path.to_string(),
+                filename: filename.clone(),
+                line: line_num,
+            });
         }
     }
 

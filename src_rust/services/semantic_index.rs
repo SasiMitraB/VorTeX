@@ -1,6 +1,6 @@
 use crate::services::bibtex_parser::{parse_bib_file, BibEntryItem};
 use crate::services::latex_parser::{
-    parse_latex_file, BibRef, CitationItem, LabelItem, RefItem, SectionItem,
+    parse_latex_file, BibRef, CitationItem, LabelItem, RefItem, SectionItem, TodoItem,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -31,6 +31,8 @@ pub struct DiskIndexData {
     pub citations: Vec<(String, Vec<CitationItem>)>,
     pub refs: Vec<(String, Vec<RefItem>)>,
     pub sections: Vec<(String, Vec<SectionItem>)>,
+    #[serde(default)]
+    pub todos: Vec<(String, Vec<TodoItem>)>,
     pub bibliographies: Vec<BibRef>,
     pub file_hashes: Vec<(String, String)>,
 }
@@ -42,6 +44,7 @@ pub struct SemanticIndexInner {
     pub citations: HashMap<String, Vec<CitationItem>>,
     pub refs: HashMap<String, Vec<RefItem>>,
     pub sections: HashMap<String, Vec<SectionItem>>,
+    pub todos: HashMap<String, Vec<TodoItem>>,
     pub bibliographies: Vec<BibRef>,
     pub file_hashes: HashMap<String, String>,
     pub current_project: Option<String>,
@@ -164,6 +167,9 @@ impl SemanticIndex {
             if !parsed.sections.is_empty() {
                 write.sections.insert(file_path.to_string(), parsed.sections);
             }
+            if !parsed.todos.is_empty() {
+                write.todos.insert(file_path.to_string(), parsed.todos);
+            }
             let mut bibs_to_load = Vec::new();
             for bib in &parsed.bibliographies {
                 if !write
@@ -226,6 +232,7 @@ impl SemanticIndex {
         inner.citations.remove(file_path);
         inner.refs.remove(file_path);
         inner.sections.remove(file_path);
+        inner.todos.remove(file_path);
         inner.bibliographies.retain(|b| b.source_file != file_path);
     }
 
@@ -283,6 +290,31 @@ impl SemanticIndex {
         read.sections.get(file_path).cloned().unwrap_or_default()
     }
 
+    pub fn get_all_sections(&self) -> Vec<SectionItem> {
+        let read = self.inner.read().unwrap();
+        let mut all = Vec::new();
+        for list in read.sections.values() {
+            all.extend(list.clone());
+        }
+        all.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+        all
+    }
+
+    pub fn get_all_todos(&self) -> Vec<TodoItem> {
+        let read = self.inner.read().unwrap();
+        let mut all = Vec::new();
+        for list in read.todos.values() {
+            all.extend(list.clone());
+        }
+        all.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+        all
+    }
+
+    pub fn get_todos_for_file(&self, file_path: &str) -> Vec<TodoItem> {
+        let read = self.inner.read().unwrap();
+        read.todos.get(file_path).cloned().unwrap_or_default()
+    }
+
     pub fn get_stats(&self) -> IndexStats {
         let read = self.inner.read().unwrap();
         IndexStats {
@@ -300,6 +332,7 @@ impl SemanticIndex {
         write.citations.clear();
         write.refs.clear();
         write.sections.clear();
+        write.todos.clear();
         write.bibliographies.clear();
         write.file_hashes.clear();
         write.current_project = None;
@@ -326,6 +359,7 @@ impl SemanticIndex {
                 citations: read.citations.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
                 refs: read.refs.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
                 sections: read.sections.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                todos: read.todos.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
                 bibliographies: read.bibliographies.clone(),
                 file_hashes: read.file_hashes.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             };
@@ -347,6 +381,7 @@ impl SemanticIndex {
                         write.citations = data.citations.into_iter().collect();
                         write.refs = data.refs.into_iter().collect();
                         write.sections = data.sections.into_iter().collect();
+                        write.todos = data.todos.into_iter().collect();
                         write.bibliographies = data.bibliographies;
                         write.file_hashes = data.file_hashes.into_iter().collect();
                     }

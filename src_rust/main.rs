@@ -128,6 +128,14 @@ impl VorTexApp {
             self.state.file_tree = tree;
         }
 
+        // Load project outline and todos
+        if let Ok(sections) = self.state.backend.get_all_sections() {
+            self.state.outline_sections = sections;
+        }
+        if let Ok(todos) = self.state.backend.get_todos(None) {
+            self.state.todos = todos;
+        }
+
         // Auto open main.tex if available
         let main_tex = std::path::Path::new(&project_path).join("main.tex");
         if main_tex.exists() {
@@ -157,13 +165,20 @@ impl VorTexApp {
                 editor.set_content(&content, Some(path.clone()));
             });
 
-            // Update document outline
-            if path.ends_with(".tex") {
+            // Update document outline and todos
+            if let Ok(sections) = self.state.backend.get_all_sections() {
+                if !sections.is_empty() {
+                    self.state.outline_sections = sections;
+                } else if let Ok(sec) = self.state.backend.get_sections(&path) {
+                    self.state.outline_sections = sec;
+                }
+            } else if path.ends_with(".tex") {
                 if let Ok(sections) = self.state.backend.get_sections(&path) {
                     self.state.outline_sections = sections;
                 }
-            } else {
-                self.state.outline_sections.clear();
+            }
+            if let Ok(todos) = self.state.backend.get_todos(None) {
+                self.state.todos = todos;
             }
         }
 
@@ -197,6 +212,14 @@ impl VorTexApp {
                     // Reindex file
                     if let Ok(stats) = self.state.backend.reindex_file(path) {
                         self.state.index_stats = stats;
+                    }
+
+                    // Refresh outline and todos
+                    if let Ok(sections) = self.state.backend.get_all_sections() {
+                        self.state.outline_sections = sections;
+                    }
+                    if let Ok(todos) = self.state.backend.get_todos(None) {
+                        self.state.todos = todos;
                     }
                 }
             } else {
@@ -527,6 +550,23 @@ impl VorTexApp {
         cx.notify();
     }
 
+    pub fn jump_to_document_location(&mut self, file_path: String, line: usize, cx: &mut Context<Self>) {
+        let current_path = self.state.active_tab().and_then(|t| t.path.clone());
+        if current_path.as_deref() != Some(&file_path) && !file_path.is_empty() {
+            let content = self.state.backend.read_file(&file_path).unwrap_or_default();
+            self.open_file_in_active_pane(file_path, content, cx);
+        }
+
+        let active_editor = match self.state.active_pane {
+            PaneSide::Left => &self.editor_left,
+            PaneSide::Right => &self.editor_right,
+        };
+        active_editor.update(cx, |editor, _cx| {
+            editor.jump_to_line(line);
+        });
+        cx.notify();
+    }
+
     pub fn build_current_project(&mut self, cx: &mut Context<Self>) {
         if self.state.is_building {
             return;
@@ -586,11 +626,24 @@ impl VorTexApp {
                             v.last_render_mtime = None;
                             v.is_rendering = false;
                         }
+                    } else if change.path.to_lowercase().ends_with(".tex") {
+                        if let Ok(sections) = self.state.backend.get_all_sections() {
+                            self.state.outline_sections = sections;
+                        }
+                        if let Ok(todos) = self.state.backend.get_todos(None) {
+                            self.state.todos = todos;
+                        }
                     }
                 }
                 BackendEvent::IndexReady(stats) => {
                     self.state.index_stats = stats;
                     self.state.status_message = Some("Semantic index ready".to_string());
+                    if let Ok(sections) = self.state.backend.get_all_sections() {
+                        self.state.outline_sections = sections;
+                    }
+                    if let Ok(todos) = self.state.backend.get_todos(None) {
+                        self.state.todos = todos;
+                    }
                 }
                 BackendEvent::BuildFinished(result) => {
                     self.state.is_building = false;
@@ -715,15 +768,18 @@ impl Render for VorTexApp {
                 });
 
                 let sidebar_vis = self.state.sidebar_visible;
+                let sidebar_tab = self.state.sidebar_tab;
                 let file_tree = self.state.file_tree.clone();
                 let expanded_folders = self.state.expanded_folders.clone();
                 let outline_sections = self.state.outline_sections.clone();
+                let todos = self.state.todos.clone();
                 let active_tab_path = self.state.active_tab().and_then(|t| t.path.clone());
                 let act_sidebar = active_tab_path.clone();
                 let act_statusbar = active_tab_path.clone();
 
                 let tree_scroll = self.state.sidebar_tree_scroll_handle.clone();
                 let outline_scroll = self.state.sidebar_outline_scroll_handle.clone();
+                let todo_scroll = self.state.sidebar_todo_scroll_handle.clone();
 
                 let left_tabs = self.state.pane_left.tabs.clone();
                 let left_active_id = self.state.pane_left.active_tab_id.clone();
@@ -792,7 +848,8 @@ impl Render for VorTexApp {
 
                 let v_toggle_folder = view_handle.clone();
                 let v_open_tree_file = view_handle.clone();
-                let v_jump_outline = view_handle.clone();
+                let v_select_sidebar_tab = view_handle.clone();
+                let v_jump_location = view_handle.clone();
 
                 let v_sw_left = view_handle.clone();
                 let v_cl_left = view_handle.clone();
@@ -953,12 +1010,21 @@ impl Render for VorTexApp {
                             .overflow_hidden()
                             .when(sidebar_vis, move |d| {
                                 d.child(render_sidebar(
+                                    sidebar_tab,
                                     &file_tree,
                                     &expanded_folders,
                                     &outline_sections,
+                                    &todos,
                                     act_sidebar.as_deref(),
                                     &tree_scroll,
                                     &outline_scroll,
+                                    &todo_scroll,
+                                    move |tab, _window, cx| {
+                                        v_select_sidebar_tab.update(cx, |this, cx| {
+                                            this.state.sidebar_tab = tab;
+                                            cx.notify();
+                                        });
+                                    },
                                     move |path, _window, cx| {
                                         v_toggle_folder.update(cx, |this, cx| {
                                             if this.state.expanded_folders.contains(&path) {
@@ -975,12 +1041,9 @@ impl Render for VorTexApp {
                                             this.open_file_in_active_pane(path, content, cx);
                                         });
                                     },
-                                    move |line_num, _window, cx| {
-                                        v_jump_outline.update(cx, |this, cx| {
-                                            this.editor_left.update(cx, |editor, _cx| {
-                                                editor.jump_to_line(line_num);
-                                            });
-                                            cx.notify();
+                                    move |file_path, line_num, _window, cx| {
+                                        v_jump_location.update(cx, |this, cx| {
+                                            this.jump_to_document_location(file_path, line_num, cx);
                                         });
                                     },
                                 ))

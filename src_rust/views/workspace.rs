@@ -28,7 +28,7 @@ pub fn render_toolbar(
     let name = project_name.unwrap_or_else(|| "VorTeX Workspace".to_string());
 
     div()
-        .h(px(38.0))
+        .h(px(48.0))
         .bg(Theme::bg_titlebar())
         .border_b_1()
         .border_color(Theme::border_subtle())
@@ -42,27 +42,27 @@ pub fn render_toolbar(
             div()
                 .flex()
                 .items_center()
-                .gap_1()
+                .gap_1p5()
                 .child(
-                    toolbar_btn("← Projects", on_back)
+                    toolbar_btn("‹  Projects", on_back)
                 )
                 .child(
                     div().w(px(1.0)).h(px(16.0)).bg(Theme::border_subtle()).mx_1()
                 )
                 .child(
-                    toolbar_btn(if sidebar_visible { "◧ Explorer" } else { "◻ Explorer" }, on_toggle)
+                    toolbar_btn(if sidebar_visible { "▣  Explorer" } else { "□  Explorer" }, on_toggle)
                 )
                 .child(
-                    toolbar_btn("📂 Open Folder", on_op_dir)
+                    toolbar_btn("Open folder", on_op_dir)
                 )
                 .child(
-                    toolbar_btn("📄 Open File", on_op_f)
+                    toolbar_btn("Open file", on_op_f)
                 )
                 .child(
-                    toolbar_btn("+ New", on_new)
+                    toolbar_btn("＋  New", on_new)
                 )
                 .child(
-                    toolbar_btn("💾 Save", on_s)
+                    toolbar_btn("Save", on_s)
                 )
                 .child(
                     div()
@@ -88,10 +88,10 @@ pub fn render_toolbar(
                                 on_b(window, cx);
                             }
                         })
-                        .child(if is_building { "⏳ Building..." } else { "⚡ Build" }),
+                        .child(if is_building { "Building…" } else { "▶  Build" }),
                 )
                 .child(
-                    toolbar_btn("⊞ Table", on_tbl)
+                    toolbar_btn("▦  Table", on_tbl)
                 )
                 .child(
                     div()
@@ -109,7 +109,7 @@ pub fn render_toolbar(
                         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                             on_sync(window, cx);
                         })
-                        .child("⇄ Sync PDF")
+                        .child("⇄  Sync PDF")
                 ),
         )
         .child(
@@ -141,6 +141,8 @@ fn toolbar_btn(label: &'static str, on_click: impl Fn(&mut Window, &mut App) + '
         .text_xs()
         .font_weight(FontWeight::MEDIUM)
         .text_color(Theme::text_primary())
+        .h(px(30.0))
+        .items_center()
         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
             on_click(window, cx);
         })

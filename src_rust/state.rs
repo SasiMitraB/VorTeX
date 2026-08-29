@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::backend::{BackendClient, IndexStats, ProjectItem, SectionItem, TreeNode};
+use crate::backend::{BackendClient, IndexStats, ProjectItem, SectionItem, TodoItem, TreeNode};
 use crate::services::synctex::SynctexForwardResult;
 use crate::views::pdf_viewer::SynctexHighlight;
 use std::collections::{HashMap, HashSet};
@@ -9,6 +9,12 @@ use std::collections::{HashMap, HashSet};
 pub enum ViewMode {
     ProjectSelector,
     Workspace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidebarTab {
+    Explorer,
+    OutlineTodos,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,11 +207,13 @@ pub struct AppState {
     pub file_tree: Vec<TreeNode>,
     pub expanded_folders: HashSet<String>,
     pub outline_sections: Vec<SectionItem>,
+    pub todos: Vec<TodoItem>,
     pub index_stats: IndexStats,
     pub pane_left: PaneState,
     pub pane_right: PaneState,
     pub active_pane: PaneSide,
     pub sidebar_visible: bool,
+    pub sidebar_tab: SidebarTab,
     pub table_editor_open: bool,
     pub table_rows: usize,
     pub table_cols: usize,
@@ -216,6 +224,7 @@ pub struct AppState {
     pub project_scroll_handle: gpui::ScrollHandle,
     pub sidebar_tree_scroll_handle: gpui::ScrollHandle,
     pub sidebar_outline_scroll_handle: gpui::ScrollHandle,
+    pub sidebar_todo_scroll_handle: gpui::ScrollHandle,
     pub table_scroll_handle: gpui::ScrollHandle,
     pub pdf_viewers: HashMap<String, PdfViewerState>,
     pub pdf_dpi: u32,
@@ -237,11 +246,13 @@ impl AppState {
             file_tree: Vec::new(),
             expanded_folders: HashSet::new(),
             outline_sections: Vec::new(),
+            todos: Vec::new(),
             index_stats: IndexStats::default(),
             pane_left: PaneState::default(),
             pane_right: PaneState::default(),
             active_pane: PaneSide::Left,
             sidebar_visible: true,
+            sidebar_tab: SidebarTab::Explorer,
             table_editor_open: false,
             table_rows: 4,
             table_cols: 3,
@@ -252,6 +263,7 @@ impl AppState {
             project_scroll_handle: gpui::ScrollHandle::new(),
             sidebar_tree_scroll_handle: gpui::ScrollHandle::new(),
             sidebar_outline_scroll_handle: gpui::ScrollHandle::new(),
+            sidebar_todo_scroll_handle: gpui::ScrollHandle::new(),
             table_scroll_handle: gpui::ScrollHandle::new(),
             pdf_viewers: HashMap::new(),
             pdf_dpi: 144,

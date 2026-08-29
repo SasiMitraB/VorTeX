@@ -5,112 +5,113 @@ use gpui::*;
 pub struct Theme;
 
 impl Theme {
-    // Backgrounds (Atom One Dark inspired)
+    // Material-inspired dark surfaces. Keep elevation visible through small,
+    // consistent changes in lightness instead of heavy borders.
     pub fn bg_app() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.14, 1.0) // #21252b
+        hsla(225.0 / 360.0, 0.18, 0.09, 1.0) // #12141a
     }
 
     pub fn bg_titlebar() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.12, 1.0) // #1d2026
+        hsla(225.0 / 360.0, 0.17, 0.11, 1.0) // #171920
     }
 
     pub fn bg_sidebar() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.15, 1.0) // #23272e
+        hsla(225.0 / 360.0, 0.16, 0.13, 1.0) // #1b1e25
     }
 
     pub fn bg_panel() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.18, 1.0) // #282c34
+        hsla(225.0 / 360.0, 0.15, 0.16, 1.0) // #22262e
     }
 
     pub fn bg_editor() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.18, 1.0) // #282c34
+        hsla(225.0 / 360.0, 0.15, 0.16, 1.0) // #22262e
     }
 
     pub fn bg_gutter() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.16, 1.0) // #242830
+        hsla(225.0 / 360.0, 0.15, 0.14, 1.0) // #1e2229
     }
 
     pub fn bg_tab_bar() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.13, 1.0) // #1f2329
+        hsla(225.0 / 360.0, 0.17, 0.10, 1.0) // #15181e
     }
 
     pub fn bg_tab_active() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.18, 1.0) // #282c34
+        hsla(225.0 / 360.0, 0.15, 0.16, 1.0) // #22262e
     }
 
     pub fn bg_tab_inactive() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.13, 1.0) // #1f2329
+        hsla(225.0 / 360.0, 0.17, 0.10, 1.0) // #15181e
     }
 
     pub fn bg_card() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.20, 1.0) // #2e333d
+        hsla(225.0 / 360.0, 0.15, 0.20, 1.0) // #2a2f39
     }
 
     pub fn bg_modal() -> Hsla {
-        hsla(220.0 / 360.0, 0.14, 0.17, 1.0) // #252932
+        hsla(225.0 / 360.0, 0.16, 0.18, 1.0) // #262a33
     }
 
     pub fn bg_hover() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.23, 1.0) // #353b45
+        hsla(225.0 / 360.0, 0.16, 0.25, 1.0) // #353c49
     }
 
     pub fn bg_active() -> Hsla {
-        hsla(220.0 / 360.0, 0.20, 0.28, 1.0) // #3a424e
+        hsla(225.0 / 360.0, 0.22, 0.31, 1.0) // #414b5e
     }
 
     pub fn bg_current_line() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.21, 1.0) // #30353f
+        hsla(225.0 / 360.0, 0.15, 0.19, 1.0) // #292e38
     }
 
     // Text & Foreground
     pub fn text_primary() -> Hsla {
-        hsla(220.0 / 360.0, 0.14, 0.71, 1.0) // #abb2bf
+        hsla(220.0 / 360.0, 0.12, 0.78, 1.0) // #c4c9d4
     }
 
     pub fn text_bright() -> Hsla {
-        hsla(0.0, 0.0, 0.95, 1.0) // #f2f2f2
+        hsla(220.0 / 360.0, 0.18, 0.97, 1.0) // #f2f4fa
     }
 
     pub fn text_muted() -> Hsla {
-        hsla(220.0 / 360.0, 0.09, 0.55, 1.0) // #7f848e
+        hsla(220.0 / 360.0, 0.10, 0.60, 1.0) // #9299a8
     }
 
     pub fn text_dim() -> Hsla {
-        hsla(220.0 / 360.0, 0.08, 0.40, 1.0) // #5c6370
+        hsla(220.0 / 360.0, 0.09, 0.46, 1.0) // #6d7482
     }
 
     // Accent Colors
     pub fn accent_blue() -> Hsla {
-        hsla(207.0 / 360.0, 0.82, 0.66, 1.0) // #61afef
+        hsla(222.0 / 360.0, 0.90, 0.76, 1.0) // #9ab5ff
     }
 
     pub fn accent_green() -> Hsla {
-        hsla(95.0 / 360.0, 0.38, 0.62, 1.0) // #98c379
+        hsla(145.0 / 360.0, 0.55, 0.68, 1.0) // #7fe0a7
     }
 
     pub fn accent_purple() -> Hsla {
-        hsla(286.0 / 360.0, 0.60, 0.67, 1.0) // #c678dd
+        hsla(265.0 / 360.0, 0.78, 0.78, 1.0) // #c5a9ff
     }
 
     pub fn accent_yellow() -> Hsla {
-        hsla(39.0 / 360.0, 0.67, 0.69, 1.0) // #e5c07b
+        hsla(42.0 / 360.0, 0.84, 0.76, 1.0) // #f4c978
     }
 
     pub fn accent_orange() -> Hsla {
-        hsla(29.0 / 360.0, 0.54, 0.61, 1.0) // #d19a66
+        hsla(26.0 / 360.0, 0.76, 0.70, 1.0) // #ecaa78
     }
 
     pub fn accent_red() -> Hsla {
-        hsla(355.0 / 360.0, 0.65, 0.65, 1.0) // #e06c75
+        hsla(355.0 / 360.0, 0.76, 0.72, 1.0) // #f18b97
     }
 
     pub fn accent_cyan() -> Hsla {
-        hsla(187.0 / 360.0, 0.47, 0.55, 1.0) // #56b6c2
+        hsla(190.0 / 360.0, 0.70, 0.70, 1.0) // #72d7e3
     }
 
     // Borders
     pub fn border_subtle() -> Hsla {
-        hsla(220.0 / 360.0, 0.13, 0.22, 1.0) // #333842
+        hsla(225.0 / 360.0, 0.14, 0.22, 1.0) // #30353f
     }
 
     pub fn border_focus() -> Hsla {

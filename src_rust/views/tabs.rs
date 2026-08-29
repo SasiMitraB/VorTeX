@@ -51,7 +51,7 @@ pub fn render_tab_bar(
                         .border_r_1()
                         .border_color(Theme::border_subtle())
                         .bg(if is_active { Theme::bg_tab_active() } else { Theme::bg_tab_inactive() })
-                        .when(is_active, |d| d.border_t_2().border_color(Theme::border_focus()))
+                        .when(is_active, |d| d.border_b_2().border_color(Theme::border_focus()))
                         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                             on_sw(tab_id.clone(), pane_side, window, cx);
                         })

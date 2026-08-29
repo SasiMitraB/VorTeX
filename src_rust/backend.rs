@@ -11,7 +11,7 @@ pub use crate::services::file_watcher::{FileChangeEvent, FileWatcher};
 pub use crate::services::fs_utils::{build_tree, get_config_val, scan_projects, set_config_val, ProjectItem, TreeNode};
 pub use crate::services::fuzzy_matcher::{FuzzyMatchResult, Matcher};
 #[allow(unused_imports)]
-pub use crate::services::latex_parser::{LabelItem, SectionItem};
+pub use crate::services::latex_parser::{LabelItem, SectionItem, TodoItem};
 #[allow(unused_imports)]
 pub use crate::services::pdf_renderer::{
     ensure_pdf_rendered, get_pdf_page_count, get_pdf_page_dimensions, is_cache_valid,
@@ -138,6 +138,18 @@ impl BackendClient {
 
     pub fn get_sections(&self, file_path: &str) -> Result<Vec<SectionItem>> {
         Ok(self.semantic_index.get_sections_for_file(file_path))
+    }
+
+    pub fn get_all_sections(&self) -> Result<Vec<SectionItem>> {
+        Ok(self.semantic_index.get_all_sections())
+    }
+
+    pub fn get_todos(&self, file_path: Option<&str>) -> Result<Vec<TodoItem>> {
+        if let Some(path) = file_path {
+            Ok(self.semantic_index.get_todos_for_file(path))
+        } else {
+            Ok(self.semantic_index.get_all_todos())
+        }
     }
 
     pub fn fuzzy_search_labels(&self, query: &str, current_file: Option<&str>) -> Result<Vec<FuzzyMatchResult>> {
