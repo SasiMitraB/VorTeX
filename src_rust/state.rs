@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::backend::{BackendClient, IndexStats, ProjectItem, SectionItem, TableItem, TodoItem, TreeNode};
+use crate::backend::{BackendClient, IndexStats, LabelItem, ProjectItem, SectionItem, TableItem, TodoItem, TreeNode};
 use crate::services::synctex::SynctexForwardResult;
 use crate::theme::{detect_system_theme, ThemeMode, ThemePreference};
 use crate::views::pdf_viewer::SynctexHighlight;
@@ -16,6 +16,16 @@ pub enum ViewMode {
 pub enum SidebarTab {
     Explorer,
     OutlineTodos,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelTypeFilter {
+    All,
+    Section,
+    Equation,
+    Table,
+    Figure,
+    Other,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,7 +219,9 @@ pub struct AppState {
     pub expanded_folders: HashSet<String>,
     pub outline_sections: Vec<SectionItem>,
     pub outline_tables: Vec<TableItem>,
+    pub outline_labels: Vec<LabelItem>,
     pub todos: Vec<TodoItem>,
+    pub sidebar_label_filter: LabelTypeFilter,
     pub index_stats: IndexStats,
     pub pane_left: PaneState,
     pub pane_right: PaneState,
@@ -242,7 +254,9 @@ impl AppState {
             expanded_folders: HashSet::new(),
             outline_sections: Vec::new(),
             outline_tables: Vec::new(),
+            outline_labels: Vec::new(),
             todos: Vec::new(),
+            sidebar_label_filter: LabelTypeFilter::All,
             index_stats: IndexStats::default(),
             pane_left: PaneState::default(),
             pane_right: PaneState::default(),

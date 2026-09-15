@@ -160,6 +160,10 @@ impl BackendClient {
         }
     }
 
+    pub fn get_all_labels(&self) -> Result<Vec<crate::services::latex_parser::LabelItem>> {
+        Ok(self.semantic_index.get_all_labels())
+    }
+
     pub fn fuzzy_search_labels(&self, query: &str, current_file: Option<&str>) -> Result<Vec<FuzzyMatchResult>> {
         let labels = self.semantic_index.get_all_labels();
         Ok(self.matcher.search_labels(query, &labels, current_file))
@@ -179,6 +183,10 @@ impl BackendClient {
 
     pub fn get_stats(&self) -> Result<IndexStats> {
         Ok(self.semantic_index.get_stats())
+    }
+
+    pub fn get_all_bib_entries(&self) -> std::collections::HashMap<String, crate::services::bibtex_parser::BibEntryItem> {
+        self.semantic_index.get_all_bib_entries_map()
     }
 
     pub fn build_project(&self, tex_file_path: &str) -> Result<BuildResult> {

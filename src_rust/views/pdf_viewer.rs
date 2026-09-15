@@ -80,11 +80,11 @@ pub fn render_pdf_viewer(
         .flex_col()
         .overflow_hidden()
         .child(
-            // Viewer toolbar
+            // Viewer toolbar HUD
             div()
-                .h(px(36.0))
+                .h(px(34.0))
                 .w_full()
-                .bg(Theme::bg_panel())
+                .bg(Theme::bg_titlebar())
                 .border_b_1()
                 .border_color(Theme::border_subtle())
                 .flex()
@@ -106,8 +106,14 @@ pub fn render_pdf_viewer(
                         )
                         .child(
                             div()
+                                .text_color(Theme::border_subtle())
+                                .child("•"),
+                        )
+                        .child(
+                            div()
                                 .text_xs()
-                                .text_color(Theme::text_muted())
+                                .font_family(".AppleSystemUIFontMonospaced")
+                                .text_color(Theme::text_dim())
                                 .child(format!("{} pages", page_count)),
                         )
                         .when_some(highlight_page, |d, p| {
@@ -115,11 +121,12 @@ pub fn render_pdf_viewer(
                                 div()
                                     .px_2()
                                     .py_0p5()
-                                    .bg(Theme::accent_blue())
-                                    .rounded_sm()
+                                    .bg(Theme::bg_card())
+                                    .rounded_full()
                                     .text_xs()
-                                    .text_color(Theme::bg_titlebar())
-                                    .child(format!("Sync → p.{}", p)),
+                                    .font_family(".AppleSystemUIFontMonospaced")
+                                    .text_color(Theme::accent_teal())
+                                    .child(format!("100% Synced (p.{})", p)),
                             )
                         })
                         .when(is_rendering, |d| {
@@ -128,41 +135,44 @@ pub fn render_pdf_viewer(
                                     .px_2()
                                     .py_0p5()
                                     .bg(Theme::accent_yellow())
-                                    .rounded_sm()
+                                    .rounded_full()
                                     .text_xs()
-                                    .text_color(Theme::bg_titlebar())
-                                    .child("⏳ Rendering..."),
+                                    .text_color(Theme::text_inverted())
+                                    .child("Rendering..."),
                             )
                         }),
                 )
                 .child(
+                    // Floating glass zoom controls & quick action icons
                     div()
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(viewer_btn("-", on_zoom_out.clone()))
+                        .child(viewer_btn("–", on_zoom_out.clone()))
                         .child(
                             div()
                                 .px_2()
-                                .py_1()
+                                .py_0p5()
                                 .bg(Theme::bg_card())
                                 .border_1()
                                 .border_color(Theme::border_subtle())
                                 .rounded_md()
                                 .text_xs()
-                                .text_color(Theme::text_primary())
+                                .font_family(".AppleSystemUIFontMonospaced")
+                                .text_color(Theme::accent_blue())
+                                .font_weight(FontWeight::MEDIUM)
                                 .cursor_pointer()
                                 .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                                     on_zoom_reset(window, cx);
                                 })
                                 .child(format!("{}%", zoom_pct)),
                         )
-                        .child(viewer_btn("+", on_zoom_in.clone()))
+                        .child(viewer_btn("＋", on_zoom_in.clone()))
                         .child(
-                            div().w(px(1.0)).h(px(16.0)).bg(Theme::border_subtle()).mx_1()
+                            div().w(px(1.0)).h(px(14.0)).bg(Theme::border_subtle()).mx_1()
                         )
-                        .child(viewer_btn("↻ Reload", on_reload.clone()))
-                        .child(viewer_btn("↗ Open", on_open_external.clone())),
+                        .child(viewer_btn("↻", on_reload.clone()))
+                        .child(viewer_btn("↗", on_open_external.clone())),
                 ),
         )
         .child(if has_pages {
@@ -237,14 +247,14 @@ pub fn render_pdf_viewer(
                                     let win_w = f32::from(win_size.width);
                                     // let win_h = f32::from(win_size.height);
 
-                                    let sidebar_w = if sidebar_visible { 240.0 } else { 0.0 };
+                                    let sidebar_w = if sidebar_visible { 296.0 } else { 0.0 };
                                     let pane_w = if has_right_pane {
                                         (win_w - sidebar_w).max(200.0) / 2.0
                                     } else {
                                         (win_w - sidebar_w).max(200.0)
                                     };
                                     // Viewer toolbar + app toolbar + tab bar heights before scroll container
-                                    let chrome_top = 38.0 + 32.0 + 36.0; // app toolbar 38, tab bar 32, viewer toolbar 36
+                                    let chrome_top = 46.0 + 34.0 + 36.0; // app toolbar 46, tab bar 34, viewer toolbar 36
 
                                     // Scroll offset (positive scrolled amount)
                                     let scroll_y = (-f32::from(scroll_h.offset().y)).max(0.0);

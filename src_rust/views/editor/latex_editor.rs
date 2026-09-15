@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::backend::BackendClient;
+use crate::services::grammar_checker::{run_grammar_check, GrammarDiagnostic};
 use crate::theme::Theme;
 use crate::views::editor::completion::{render_completion_popup, CompletionItem, CompletionKind, CompletionState};
 use gpui::prelude::*;
@@ -42,6 +43,10 @@ pub struct VisualLine {
 pub const CHAR_WIDTH: f32 = 8.75;
 pub const FONT_SIZE: f32 = 14.0;
 pub const LINE_HEIGHT: f32 = 22.0;
+pub const SIDEBAR_WIDTH: f32 = 296.0; // 46.0 ribbon + 250.0 sidebar panel
+pub const GUTTER_WIDTH: f32 = 48.0;
+pub const TEXT_PADDING_LEFT: f32 = 12.0;
+pub const EDITOR_HEADER_HEIGHT: f32 = 112.0; // 46.0 (app toolbar) + 34.0 (tab bar) + 24.0 (breadcrumb) + 8.0 (py_2 padding top)
 
 pub struct LatexEditor {
     pub focus_handle: FocusHandle,
@@ -65,6 +70,14 @@ pub struct LatexEditor {
     pub is_dirty: bool,
     pub undo_stack: Vec<(Vec<String>, usize, usize)>,
     pub redo_stack: Vec<(Vec<String>, usize, usize)>,
+    /// Active grammar diagnostics (refreshed asynchronously after each edit)
+    pub grammar_diagnostics: Vec<GrammarDiagnostic>,
+    /// Index into `grammar_diagnostics` for the currently hovered lint
+    pub hovered_diagnostic: Option<usize>,
+    /// Tracks whether a grammar check has been scheduled/is pending
+    pub grammar_check_pending: bool,
+    /// Pending/running grammar check task (dropped/cancelled when new edits arrive)
+    pub grammar_check_task: Option<Task<()>>,
 }
 
 impl LatexEditor {
@@ -97,6 +110,10 @@ impl LatexEditor {
             is_dirty: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            grammar_diagnostics: Vec::new(),
+            hovered_diagnostic: None,
+            grammar_check_pending: false,
+            grammar_check_task: None,
         }
     }
 
@@ -117,6 +134,52 @@ impl LatexEditor {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.scroll_top_px = 0.0;
+        self.grammar_diagnostics.clear();
+        self.hovered_diagnostic = None;
+        self.grammar_check_pending = false;
+        self.grammar_check_task = None;
+    }
+
+    /// Schedule a debounced grammar check. Called after every edit.
+    /// Runs the debounce timer on the foreground executor, then offloads heavy
+    /// BibTeX fetching and Harper linting entirely to the background thread pool.
+    pub fn schedule_grammar_check(&mut self, cx: &mut Context<Self>) {
+        self.grammar_check_pending = true;
+        let backend = self.backend.clone();
+
+        // Dropping the previous task immediately cancels any pending grammar check
+        self.grammar_check_task = Some(cx.spawn(|this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                // 1. Debounce timer - wait until user pauses typing (750ms)
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(750))
+                    .await;
+
+                // 2. Read latest buffer content only after debounce expires
+                let content = match this.read_with(&cx, |editor, _| editor.get_content()) {
+                    Ok(c) => c,
+                    Err(_) => return,
+                };
+
+                // 3. Offload all parsing, BibTeX resolution, and Harper linting to background worker threads
+                let bg = cx.background_executor().clone();
+                let diagnostics = bg
+                    .spawn(async move {
+                        let bib = backend.get_all_bib_entries();
+                        run_grammar_check(&content, &bib)
+                    })
+                    .await;
+
+                // 4. Update editor state and request redraw on main thread
+                let _ = this.update(&mut cx, |editor, cx| {
+                    editor.grammar_diagnostics = diagnostics;
+                    editor.grammar_check_pending = false;
+                    editor.hovered_diagnostic = None;
+                    cx.notify();
+                });
+            }
+        }));
     }
 
     pub fn get_content(&self) -> String {
@@ -220,13 +283,13 @@ impl LatexEditor {
     }
 
     pub fn calculate_wrap_cols(&self, win_w: f32) -> usize {
-        let sidebar_w = if self.sidebar_visible { 240.0 } else { 0.0 };
+        let sidebar_w = if self.sidebar_visible { SIDEBAR_WIDTH } else { 0.0 };
         let pane_w = if self.has_right_pane {
             (win_w - sidebar_w).max(200.0) / 2.0
         } else {
             (win_w - sidebar_w).max(200.0)
         };
-        let gutter_w = 48.0;
+        let gutter_w = GUTTER_WIDTH;
         let padding_x = 24.0; // 12px left + 12px right padding
         let scrollbar_margin = 16.0;
         let available_w = (pane_w - gutter_w - padding_x - scrollbar_margin).max(100.0);
@@ -1721,6 +1784,15 @@ impl Render for LatexEditor {
         let norm_sel = self.normalized_selection();
         let has_sel = norm_sel.is_some();
 
+        let current_file_name = self.current_file_path
+            .as_ref()
+            .and_then(|p| std::path::Path::new(p).file_name()?.to_str())
+            .unwrap_or("untitled.tex")
+            .to_string();
+
+        // Snapshot grammar diagnostics for rendering
+        let grammar_diags = self.grammar_diagnostics.clone();
+        let hovered_diag = self.hovered_diagnostic;
         div()
             .track_focus(&self.focus_handle)
             .size_full()
@@ -1728,16 +1800,56 @@ impl Render for LatexEditor {
             .flex()
             .flex_col()
             .overflow_hidden()
+            // Breadcrumb navigation bar (Catppuccin Mocha #1E1E2E)
+            .child(
+                div()
+                    .h(px(24.0))
+                    .px_3()
+                    .bg(Theme::bg_editor())
+                    .border_b_1()
+                    .border_color(Theme::border_subtle())
+                    .flex()
+                    .items_center()
+                    .gap_1p5()
+                    .text_xs()
+                    .font_family(".AppleSystemUIFontMonospaced")
+                    .child(
+                        div()
+                            .text_color(Theme::text_dim())
+                            .child("VorTeX"),
+                    )
+                    .child(
+                        div()
+                            .text_color(Theme::border_subtle())
+                            .child("/"),
+                    )
+                    .child(
+                        div()
+                            .text_color(Theme::text_secondary())
+                            .child(current_file_name),
+                    )
+                    .child(
+                        div()
+                            .text_color(Theme::border_subtle())
+                            .child("/"),
+                    )
+                    .child(
+                        div()
+                            .text_color(Theme::accent_mauve())
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(format!("line {}", cursor_r + 1)),
+                    ),
+            )
             .on_mouse_down(MouseButton::Left, cx.listener(|this, event: &MouseDownEvent, window, cx| {
                 window.focus(&this.focus_handle);
                 let mouse_x = f32::from(event.position.x);
                 let mouse_y = f32::from(event.position.y);
-                let sidebar_w = if this.sidebar_visible { 240.0 } else { 0.0 };
+                let sidebar_w = if this.sidebar_visible { SIDEBAR_WIDTH } else { 0.0 };
                 let win_w = f32::from(window.viewport_size().width);
                 let pane_w = if this.has_right_pane { (win_w - sidebar_w).max(200.0) / 2.0 } else { (win_w - sidebar_w).max(200.0) };
                 let ed_x = if this.is_right_pane { sidebar_w + pane_w } else { sidebar_w };
-                let t_start_x = ed_x + 48.0 + 12.0;
-                let ed_y = 38.0 + 32.0 + 8.0;
+                let t_start_x = ed_x + GUTTER_WIDTH + TEXT_PADDING_LEFT;
+                let ed_y = EDITOR_HEADER_HEIGHT;
 
                 let wrap_cols = this.calculate_wrap_cols(win_w);
                 this.last_wrap_cols = wrap_cols;
@@ -1775,17 +1887,28 @@ impl Render for LatexEditor {
                 cx.notify();
             }))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
-                if !this.is_mouse_dragging || event.pressed_button != Some(MouseButton::Left) {
+                let is_dragging = this.is_mouse_dragging && event.pressed_button == Some(MouseButton::Left);
+                if !is_dragging && this.grammar_diagnostics.is_empty() {
                     return;
                 }
+
                 let mouse_x = f32::from(event.position.x);
                 let mouse_y = f32::from(event.position.y);
-                let sidebar_w = if this.sidebar_visible { 240.0 } else { 0.0 };
+                let sidebar_w = if this.sidebar_visible { SIDEBAR_WIDTH } else { 0.0 };
                 let win_w = f32::from(window.viewport_size().width);
                 let pane_w = if this.has_right_pane { (win_w - sidebar_w).max(200.0) / 2.0 } else { (win_w - sidebar_w).max(200.0) };
                 let ed_x = if this.is_right_pane { sidebar_w + pane_w } else { sidebar_w };
-                let t_start_x = ed_x + 48.0 + 12.0;
-                let ed_y = 38.0 + 32.0 + 8.0;
+                let t_start_x = ed_x + GUTTER_WIDTH + TEXT_PADDING_LEFT;
+                let ed_y = EDITOR_HEADER_HEIGHT;
+
+                // Quick bounds check: if outside text area and not dragging, clear hover and return
+                if !is_dragging && (mouse_y < ed_y || mouse_x < t_start_x) {
+                    if this.hovered_diagnostic.is_some() {
+                        this.hovered_diagnostic = None;
+                        cx.notify();
+                    }
+                    return;
+                }
 
                 let wrap_cols = this.calculate_wrap_cols(win_w);
                 this.last_wrap_cols = wrap_cols;
@@ -1794,17 +1917,35 @@ impl Render for LatexEditor {
                 let line_y = mouse_y - ed_y + this.scroll_top_px;
                 let max_v_row = visual_lines.len().saturating_sub(1);
                 let hover_v_row = ((line_y / LINE_HEIGHT).floor() as isize).clamp(0, max_v_row as isize) as usize;
+                if hover_v_row >= visual_lines.len() {
+                    return;
+                }
                 let vl = visual_lines[hover_v_row];
                 let seg_len = vl.end_col - vl.start_col;
                 let hover_col_in_seg = (((mouse_x - t_start_x) / CHAR_WIDTH).max(0.0).round() as usize).min(seg_len);
                 let hover_row = vl.buffer_row;
                 let hover_col = vl.start_col + hover_col_in_seg;
 
-                let anchor = this.selection_anchor.unwrap_or((this.cursor_row, this.cursor_col));
-                this.set_selection(anchor, (hover_row, hover_col));
-                this.ensure_cursor_visible();
-                cx.notify();
+                // Update grammar diagnostic hover state
+                if !this.grammar_diagnostics.is_empty() {
+                    let new_hovered = this.grammar_diagnostics.iter().position(|d| {
+                        d.row == hover_row && hover_col >= d.col_start && hover_col < d.col_end
+                    });
+                    if new_hovered != this.hovered_diagnostic {
+                        this.hovered_diagnostic = new_hovered;
+                        cx.notify();
+                    }
+                }
+
+                // Handle selection drag
+                if is_dragging {
+                    let anchor = this.selection_anchor.unwrap_or((this.cursor_row, this.cursor_col));
+                    this.set_selection(anchor, (hover_row, hover_col));
+                    this.ensure_cursor_visible();
+                    cx.notify();
+                }
             }))
+
 
             .on_mouse_up(MouseButton::Left, cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
                 this.is_mouse_dragging = false;
@@ -1901,6 +2042,7 @@ impl Render for LatexEditor {
                                 }
                                 this.cursor_col = 0;
                             }
+                            this.schedule_grammar_check(cx);
                             cx.notify();
                             return;
                         }
@@ -1908,6 +2050,7 @@ impl Render for LatexEditor {
                             if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
                                 this.paste_text(&text);
                             }
+                            this.schedule_grammar_check(cx);
                             cx.notify();
                             return;
                         }
@@ -1917,16 +2060,19 @@ impl Render for LatexEditor {
                             } else {
                                 this.undo();
                             }
+                            this.schedule_grammar_check(cx);
                             cx.notify();
                             return;
                         }
                         "y" => {
                             this.redo();
+                            this.schedule_grammar_check(cx);
                             cx.notify();
                             return;
                         }
                         "/" => {
                             this.toggle_comment();
+                            this.schedule_grammar_check(cx);
                             cx.notify();
                             return;
                         }
@@ -2056,10 +2202,29 @@ impl Render for LatexEditor {
                             this.insert_text("  ");
                         }
                     }
-                    _ => {
-                        if key.chars().count() == 1 && !is_cmd_or_ctrl && !is_alt {
+                    "space" => {
+                        if !is_cmd_or_ctrl && !is_alt {
+                            this.completion.close();
                             if this.has_selection() {
-                                let (open, close) = match key {
+                                this.delete_selection();
+                            }
+                            this.insert_text(" ");
+                        }
+                    }
+                    _ => {
+                        let text_to_insert: String = if let Some(ref kc) = event.keystroke.key_char {
+                            kc.clone()
+                        } else if key == "space" {
+                            " ".to_string()
+                        } else if is_shift && key.chars().count() == 1 {
+                            key.to_uppercase()
+                        } else {
+                            key.to_string()
+                        };
+
+                        if text_to_insert.chars().count() == 1 && !is_cmd_or_ctrl && !is_alt {
+                            if this.has_selection() {
+                                let (open, close) = match text_to_insert.as_str() {
                                     "$" => ("$", "$"),
                                     "{" | "}" => ("{", "}"),
                                     "(" | ")" => ("(", ")"),
@@ -2077,10 +2242,11 @@ impl Render for LatexEditor {
                                 }
                                 this.delete_selection();
                             }
-                            this.insert_text(key);
+                            this.insert_text(&text_to_insert);
                         }
                     }
                 }
+                this.schedule_grammar_check(cx);
                 cx.notify();
             }))
             .child(
@@ -2227,6 +2393,73 @@ impl Render for LatexEditor {
                                                         .h(px(18.0))
                                                         .bg(Theme::caret()),
                                                 )
+                                            })
+                                            // Grammar diagnostic underlines
+                                            .children({
+                                                let row = vl.buffer_row;
+                                                let seg_start = vl.start_col;
+                                                let seg_end = vl.end_col;
+                                                grammar_diags.iter().enumerate().filter_map(move |(idx, diag)| {
+                                                    if diag.row != row {
+                                                        return None;
+                                                    }
+                                                    // Clamp diagnostic span to this visual segment
+                                                    let ul_start = diag.col_start.max(seg_start);
+                                                    let ul_end   = diag.col_end.min(seg_end);
+                                                    if ul_start >= ul_end {
+                                                        return None;
+                                                    }
+                                                    let left = px((ul_start - seg_start) as f32 * CHAR_WIDTH);
+                                                    let width = px((ul_end - ul_start) as f32 * CHAR_WIDTH);
+                                                    let is_hovered = hovered_diag == Some(idx);
+                                                    let underline_color = if is_hovered {
+                                                        hsla(0.12, 1.0, 0.62, 1.0) // brighter amber on hover
+                                                    } else {
+                                                        hsla(0.12, 0.95, 0.52, 0.85) // amber
+                                                    };
+                                                    Some(
+                                                        div()
+                                                            .absolute()
+                                                            .left(left)
+                                                            .w(width)
+                                                            .bottom(px(1.0))
+                                                            .h(px(2.0))
+                                                            .border_b_2()
+                                                            .border_color(underline_color)
+                                                    )
+                                                }).collect::<Vec<_>>()
+                                            })
+                                            // Tooltip for hovered diagnostic
+                                            .children({
+                                                let row = vl.buffer_row;
+                                                let seg_start = vl.start_col;
+                                                let mut tooltip_children = Vec::new();
+                                                if let Some(h_idx) = hovered_diag {
+                                                    if let Some(diag) = grammar_diags.get(h_idx) {
+                                                        if diag.row == row && diag.col_start >= seg_start && diag.col_start <= vl.end_col {
+                                                            let tip_left = px((diag.col_start.saturating_sub(seg_start)) as f32 * CHAR_WIDTH);
+                                                            let msg = diag.message.clone();
+                                                            tooltip_children.push(
+                                                                div()
+                                                                    .absolute()
+                                                                    .left(tip_left)
+                                                                    .bottom(px(LINE_HEIGHT))
+                                                                    .bg(hsla(0.0, 0.0, 0.12, 0.97))
+                                                                    .border_1()
+                                                                    .border_color(hsla(0.12, 0.95, 0.52, 0.7))
+                                                                    .rounded_md()
+                                                                    .px_2()
+                                                                    .py_1()
+                                                                    .text_xs()
+                                                                    .text_color(hsla(0.12, 0.9, 0.8, 1.0))
+                                                                    .font_family(".AppleSystemUIFont")
+                                                                    .max_w(px(320.0))
+                                                                    .child(msg)
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                                tooltip_children
                                             })
                                     })),
 

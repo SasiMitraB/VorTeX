@@ -134,94 +134,157 @@ impl Theme {
     }
 
     // ==========================================
-    // 1. App Surfaces & Elevation
+    // Catppuccin Core Palette Primitives
     // ==========================================
 
-    /// Base canvas: Dark #121417, Light #F7F8FA
+    // Catppuccin Mocha (Dark)
+    pub const MOCHA_CRUST: u32 = 0x11111b;
+    pub const MOCHA_MANTLE: u32 = 0x181825;
+    pub const MOCHA_BASE: u32 = 0x1e1e2e;
+    pub const MOCHA_SURFACE0: u32 = 0x313244;
+    pub const MOCHA_SURFACE1: u32 = 0x45475a;
+    pub const MOCHA_SURFACE2: u32 = 0x585b70;
+    pub const MOCHA_OVERLAY0: u32 = 0x6c7086;
+    pub const MOCHA_OVERLAY1: u32 = 0x7f849c;
+    pub const MOCHA_OVERLAY2: u32 = 0x9399b2;
+    pub const MOCHA_SUBTEXT0: u32 = 0xa6adc8;
+    pub const MOCHA_SUBTEXT1: u32 = 0xbac2de;
+    pub const MOCHA_TEXT: u32 = 0xcdd6f4;
+    pub const MOCHA_BLUE: u32 = 0x89b4fa;
+    pub const MOCHA_LAVENDER: u32 = 0xb4befe;
+    pub const MOCHA_SAPPHIRE: u32 = 0x74c7ec;
+    pub const MOCHA_SKY: u32 = 0x89dceb;
+    pub const MOCHA_TEAL: u32 = 0x94e2d5;
+    pub const MOCHA_GREEN: u32 = 0xa6e3a1;
+    pub const MOCHA_YELLOW: u32 = 0xf9e2af;
+    pub const MOCHA_PEACH: u32 = 0xfab387;
+    pub const MOCHA_MAROON: u32 = 0xeba0ac;
+    pub const MOCHA_RED: u32 = 0xf38ba8;
+    pub const MOCHA_MAUVE: u32 = 0xcba6f7;
+    pub const MOCHA_PINK: u32 = 0xf5c2e7;
+    pub const MOCHA_FLAMINGO: u32 = 0xf2cdcd;
+    pub const MOCHA_ROSEWATER: u32 = 0xf5e0dc;
+
+    // Catppuccin Latte (Light)
+    pub const LATTE_CRUST: u32 = 0xdce0e8;
+    pub const LATTE_MANTLE: u32 = 0xe6e9ef;
+    pub const LATTE_BASE: u32 = 0xeff1f5;
+    pub const LATTE_SURFACE0: u32 = 0xccd0da;
+    pub const LATTE_SURFACE1: u32 = 0xbcc0cc;
+    pub const LATTE_SURFACE2: u32 = 0xacb0be;
+    pub const LATTE_OVERLAY0: u32 = 0x9ca0b0;
+    pub const LATTE_OVERLAY1: u32 = 0x8c8fa1;
+    pub const LATTE_OVERLAY2: u32 = 0x7c7f93;
+    pub const LATTE_SUBTEXT0: u32 = 0x6c6f85;
+    pub const LATTE_SUBTEXT1: u32 = 0x5c5f77;
+    pub const LATTE_TEXT: u32 = 0x4c4f69;
+    pub const LATTE_BLUE: u32 = 0x1e66f5;
+    pub const LATTE_LAVENDER: u32 = 0x7287fd;
+    pub const LATTE_SAPPHIRE: u32 = 0x209fb5;
+    pub const LATTE_SKY: u32 = 0x04a5e5;
+    pub const LATTE_TEAL: u32 = 0x179299;
+    pub const LATTE_GREEN: u32 = 0x40a02b;
+    pub const LATTE_YELLOW: u32 = 0xdf8e1d;
+    pub const LATTE_PEACH: u32 = 0xfe640b;
+    pub const LATTE_MAROON: u32 = 0xe64553;
+    pub const LATTE_RED: u32 = 0xd20f39;
+    pub const LATTE_MAUVE: u32 = 0x8839ef;
+    pub const LATTE_PINK: u32 = 0xea76cb;
+    pub const LATTE_FLAMINGO: u32 = 0xdd7878;
+    pub const LATTE_ROSEWATER: u32 = 0xdc8a78;
+
+    // ==========================================
+    // 1. App Surfaces & Elevation (Catppuccin Hierarchy)
+    // ==========================================
+
+    /// Outer window & status bar canvas: Mocha Crust #11111B, Latte Crust #DCE0E8
     pub fn bg_app() -> Hsla {
-        Self::pick(hex(0x121417), hex(0xF7F8FA))
+        Self::pick(hex(Self::MOCHA_CRUST), hex(Self::LATTE_CRUST))
     }
 
-    /// Titlebar / Header: Dark #1A1D23, Light #EEF0F3
+    /// Titlebar / Header: Mocha Mantle #181825, Latte Mantle #E6E9EF
     pub fn bg_titlebar() -> Hsla {
-        Self::pick(hex(0x1A1D23), hex(0xEEF0F3))
+        Self::pick(hex(Self::MOCHA_MANTLE), hex(Self::LATTE_MANTLE))
     }
 
-    /// Activity ribbon: Dark #16181D, Light #EEF0F3
+    /// Activity ribbon: Mocha Mantle #181825, Latte Mantle #E6E9EF
     pub fn bg_ribbon() -> Hsla {
-        Self::pick(hex(0x16181D), hex(0xEEF0F3))
+        Self::pick(hex(Self::MOCHA_MANTLE), hex(Self::LATTE_MANTLE))
     }
 
-    /// Left sidebar panel: Dark #16181D, Light #F0F1F4
+    /// Left sidebar panel: Mocha Mantle #181825, Latte Mantle #E6E9EF
     pub fn bg_sidebar() -> Hsla {
-        Self::pick(hex(0x16181D), hex(0xF0F1F4))
+        Self::pick(hex(Self::MOCHA_MANTLE), hex(Self::LATTE_MANTLE))
     }
 
-    /// Editor writing surface: Dark #1E2128, Light #FFFFFF
+    /// Editor writing surface: Mocha Base #1E1E2E, Latte Base #EFF1F5
     pub fn bg_editor() -> Hsla {
-        Self::pick(hex(0x1E2128), hex(0xFFFFFF))
+        Self::pick(hex(Self::MOCHA_BASE), hex(Self::LATTE_BASE))
     }
 
-    /// Line numbers gutter: Dark #191C22, Light #F5F6F8
+    /// Line numbers gutter: Mocha Mantle #181825, Latte Mantle #E6E9EF
     pub fn bg_gutter() -> Hsla {
-        Self::pick(hex(0x191C22), hex(0xF5F6F8))
+        Self::pick(hex(Self::MOCHA_MANTLE), hex(Self::LATTE_MANTLE))
     }
 
-    /// Current line highlight: Dark #262A33, Light #EAF2FE
+    /// Current line highlight: Subtle Surface0 tint rgba(49, 50, 68, 0.5) / Latte rgba(204, 208, 218, 0.4)
     pub fn bg_current_line() -> Hsla {
-        Self::pick(hex(0x262A33), hex(0xEAF2FE))
+        Self::pick(
+            hexa(Self::MOCHA_SURFACE0, 0.50),
+            hexa(Self::LATTE_SURFACE0, 0.40),
+        )
     }
 
-    /// Tab bar background: Dark #16181D, Light #EEF0F3
+    /// Tab bar background: Mocha Mantle #181825, Latte Mantle #E6E9EF
     pub fn bg_tab_bar() -> Hsla {
-        Self::pick(hex(0x16181D), hex(0xEEF0F3))
+        Self::pick(hex(Self::MOCHA_MANTLE), hex(Self::LATTE_MANTLE))
     }
 
-    /// Active tab surface: Dark #1E2128, Light #FFFFFF
+    /// Active tab surface: Mocha Base #1E1E2E, Latte Base #EFF1F5
     pub fn bg_tab_active() -> Hsla {
-        Self::pick(hex(0x1E2128), hex(0xFFFFFF))
+        Self::pick(hex(Self::MOCHA_BASE), hex(Self::LATTE_BASE))
     }
 
-    /// Inactive tab surface: Dark #1A1D23, Light #E4E6EA
+    /// Inactive tab surface: Transparent or Mantle
     pub fn bg_tab_inactive() -> Hsla {
-        Self::pick(hex(0x1A1D23), hex(0xE4E6EA))
+        Self::pick(hex(Self::MOCHA_MANTLE), hex(Self::LATTE_MANTLE))
     }
 
-    /// Cards & Panels: Dark #1E2128, Light #FFFFFF
+    /// Cards & Panels: Mocha Surface0 #313244 or Base #1E1E2E
     pub fn bg_card() -> Hsla {
-        Self::pick(hex(0x1E2128), hex(0xFFFFFF))
+        Self::pick(hex(Self::MOCHA_SURFACE0), hex(Self::LATTE_SURFACE0))
     }
 
     pub fn bg_panel() -> Hsla {
-        Self::pick(hex(0x1E2128), hex(0xFFFFFF))
+        Self::pick(hex(Self::MOCHA_SURFACE0), hex(Self::LATTE_SURFACE0))
     }
 
-    /// Modal containers: Dark #1C1F26, Light #FFFFFF
+    /// Modal containers: Mocha Base #1E1E2E, Latte Base #EFF1F5
     pub fn bg_modal() -> Hsla {
-        Self::pick(hex(0x1C1F26), hex(0xFFFFFF))
+        Self::pick(hex(Self::MOCHA_BASE), hex(Self::LATTE_BASE))
     }
 
-    /// Modal backdrop dimming: Dark rgba(0,0,0,0.65), Light rgba(0,0,0,0.25)
+    /// Modal backdrop dimming
     pub fn modal_backdrop() -> Hsla {
         Self::pick(
-            hsla(0.0, 0.0, 0.0, 0.65),
-            hsla(0.0, 0.0, 0.0, 0.25),
+            hsla(0.0, 0.0, 0.0, 0.70),
+            hsla(0.0, 0.0, 0.0, 0.30),
         )
     }
 
-    /// Hover state: Dark rgba(255,255,255,0.06), Light rgba(0,0,0,0.04)
+    /// Hover state: Surface0/40 or Surface1/40
     pub fn bg_hover() -> Hsla {
         Self::pick(
-            hsla(0.0, 0.0, 1.0, 0.06),
-            hsla(0.0, 0.0, 0.0, 0.04),
+            hexa(Self::MOCHA_SURFACE0, 0.60),
+            hexa(Self::LATTE_SURFACE1, 0.40),
         )
     }
 
-    /// Active / Pressed state: Dark rgba(255,255,255,0.10), Light rgba(0,0,0,0.08)
+    /// Active / Pressed state: Surface1
     pub fn bg_active() -> Hsla {
         Self::pick(
-            hsla(0.0, 0.0, 1.0, 0.10),
-            hsla(0.0, 0.0, 0.0, 0.08),
+            hex(Self::MOCHA_SURFACE1),
+            hex(Self::LATTE_SURFACE1),
         )
     }
 
@@ -229,229 +292,261 @@ impl Theme {
     // 2. Typography & Foreground
     // ==========================================
 
-    /// Primary body text: Dark #E4E6EB, Light #1F2328
+    /// Primary body text: Mocha Text #CDD6F4, Latte Text #4C4F69
     pub fn text_primary() -> Hsla {
-        Self::pick(hex(0xE4E6EB), hex(0x1F2328))
+        Self::pick(hex(Self::MOCHA_TEXT), hex(Self::LATTE_TEXT))
     }
 
-    /// Bright headings / Active titles: Dark #FFFFFF, Light #0B0D10
+    /// Bright headings / Active titles: Mocha Text #CDD6F4, Latte Text #4C4F69
     pub fn text_bright() -> Hsla {
-        Self::pick(hex(0xFFFFFF), hex(0x0B0D10))
+        Self::pick(hex(Self::MOCHA_TEXT), hex(Self::LATTE_TEXT))
     }
 
-    /// Muted labels / secondary text: Dark #9DA3AE, Light #5B6270
+    /// Subtext / Secondary: Mocha Subtext1 #BAC2DE, Latte Subtext1 #5C5F77
+    pub fn text_secondary() -> Hsla {
+        Self::pick(hex(Self::MOCHA_SUBTEXT1), hex(Self::LATTE_SUBTEXT1))
+    }
+
+    /// Muted labels: Mocha Subtext0 #A6ADC8, Latte Subtext0 #6C6F85
     pub fn text_muted() -> Hsla {
-        Self::pick(hex(0x9DA3AE), hex(0x5B6270))
+        Self::pick(hex(Self::MOCHA_SUBTEXT0), hex(Self::LATTE_SUBTEXT0))
     }
 
-    /// Dim text / comments / placeholders: Dark #5C6370, Light #8A909C
+    /// Dim text / line numbers / comments: Mocha Overlay0 #6C7086, Latte Overlay0 #9CA0B0
     pub fn text_dim() -> Hsla {
-        Self::pick(hex(0x5C6370), hex(0x8A909C))
+        Self::pick(hex(Self::MOCHA_OVERLAY0), hex(Self::LATTE_OVERLAY0))
     }
 
-    /// Inverted button text (on solid accent backgrounds): Dark #0B0D10, Light #FFFFFF
+    /// Inverted button text (on blue/accent background): Mocha Crust #11111B, Latte Crust #EFF1F5
     pub fn text_inverted() -> Hsla {
-        Self::pick(hex(0x0B0D10), hex(0xFFFFFF))
+        Self::pick(hex(Self::MOCHA_CRUST), hex(0xFFFFFF))
     }
 
     // ==========================================
-    // 3. LaTeX Syntax Tokens
+    // 3. Authentic Catppuccin LaTeX Syntax Tokens
     // ==========================================
 
-    /// Commands (\section, \textbf, \cite, \ref): Dark #62AEEF, Light #1A73E8
+    /// Commands (\section, \title, \author, \textbf): Catppuccin Mauve
     pub fn syn_command() -> Hsla {
-        Self::pick(hex(0x62AEEF), hex(0x1A73E8))
+        Self::pick(hex(Self::MOCHA_MAUVE), hex(Self::LATTE_MAUVE))
     }
 
-    /// Environments (\begin{...}, \end{...}): Dark #E5C07B, Light #B58500
+    /// Environments (\begin{document}, \end{abstract}): Catppuccin Green
     pub fn syn_environment() -> Hsla {
-        Self::pick(hex(0xE5C07B), hex(0xB58500))
+        Self::pick(hex(Self::MOCHA_GREEN), hex(Self::LATTE_GREEN))
     }
 
-    /// Math mode ($...$, \[...\]): Dark #98C379, Light #2E7D32
+    /// Math mode ($...$, \[...\]): Catppuccin Yellow
     pub fn syn_math() -> Hsla {
-        Self::pick(hex(0x98C379), hex(0x2E7D32))
+        Self::pick(hex(Self::MOCHA_YELLOW), hex(Self::LATTE_YELLOW))
     }
 
-    /// Comments (% ...): Dark #5C6370, Light #8A909C
+    /// Comments (% ...): Catppuccin Overlay0
     pub fn syn_comment() -> Hsla {
-        Self::pick(hex(0x5C6370), hex(0x8A909C))
+        Self::pick(hex(Self::MOCHA_OVERLAY0), hex(Self::LATTE_OVERLAY0))
     }
 
-    /// Optional args ([12pt], [h!]): Dark #56B6C2, Light #0E8A8A
+    /// Optional args ([12pt], [h!], \href): Catppuccin Teal
     pub fn syn_optional_arg() -> Hsla {
-        Self::pick(hex(0x56B6C2), hex(0x0E8A8A))
+        Self::pick(hex(Self::MOCHA_TEAL), hex(Self::LATTE_TEAL))
     }
 
-    /// Brackets ({ } [ ] ( )): Dark #C678DD, Light #8B3FA8
+    /// Brackets ({ } [ ] ( )): Catppuccin Red
     pub fn syn_bracket() -> Hsla {
-        Self::pick(hex(0xC678DD), hex(0x8B3FA8))
+        Self::pick(hex(Self::MOCHA_RED), hex(Self::LATTE_RED))
     }
 
-    /// Special characters (& _ ^ # ~ \\): Dark #D19A66, Light #C1580C
+    /// Special characters / Macros (& _ ^ # ~ \\): Catppuccin Peach
     pub fn syn_special() -> Hsla {
-        Self::pick(hex(0xD19A66), hex(0xC1580C))
+        Self::pick(hex(Self::MOCHA_PEACH), hex(Self::LATTE_PEACH))
+    }
+
+    /// Citations, Labels, References: Catppuccin Sapphire
+    pub fn syn_reference() -> Hsla {
+        Self::pick(hex(Self::MOCHA_SAPPHIRE), hex(Self::LATTE_SAPPHIRE))
     }
 
     // ==========================================
     // 4. Editor Interaction & Caret
     // ==========================================
 
-    /// Cursor / Caret: Dark #FFFFFF, Light #1A73E8
+    /// Cursor / Caret: Catppuccin Blue
     pub fn caret() -> Hsla {
-        Self::pick(hex(0xFFFFFF), hex(0x1A73E8))
+        Self::pick(hex(Self::MOCHA_BLUE), hex(Self::LATTE_BLUE))
     }
 
-    /// Text Selection Fill: Dark rgba(98,174,239,0.25), Light rgba(26,115,232,0.18)
+    /// Text Selection Fill: Catppuccin Surface1 with alpha
     pub fn selection() -> Hsla {
         Self::pick(
-            hexa(0x62AEEF, 0.25),
-            hexa(0x1A73E8, 0.18),
+            hexa(Self::MOCHA_SURFACE1, 0.70),
+            hexa(Self::LATTE_SURFACE1, 0.50),
         )
     }
 
-    /// Find match - active match background: Dark rgba(229,192,123,0.35), Light rgba(181,133,0,0.35)
+    /// Find match - active match background
     pub fn find_match_active_bg() -> Hsla {
         Self::pick(
-            hexa(0xE5C07B, 0.35),
-            hexa(0xB58500, 0.35),
+            hexa(Self::MOCHA_YELLOW, 0.40),
+            hexa(Self::LATTE_YELLOW, 0.40),
         )
     }
 
-    /// Find match - active match border: Dark #E5C07B, Light #B58500
+    /// Find match - active match border
     pub fn find_match_active_border() -> Hsla {
-        Self::pick(hex(0xE5C07B), hex(0xB58500))
+        Self::pick(hex(Self::MOCHA_YELLOW), hex(Self::LATTE_YELLOW))
     }
 
-    /// Find match - other occurrences background: Dark rgba(229,192,123,0.15), Light rgba(181,133,0,0.15)
+    /// Find match - other occurrences background
     pub fn find_match_other_bg() -> Hsla {
         Self::pick(
-            hexa(0xE5C07B, 0.15),
-            hexa(0xB58500, 0.15),
+            hexa(Self::MOCHA_YELLOW, 0.18),
+            hexa(Self::LATTE_YELLOW, 0.18),
         )
     }
 
-    /// Gutter line number - active: Dark #E4E6EB, Light #1F2328
+    /// Gutter line number - active: Catppuccin Blue
     pub fn line_num_active() -> Hsla {
-        Self::pick(hex(0xE4E6EB), hex(0x1F2328))
+        Self::pick(hex(Self::MOCHA_BLUE), hex(Self::LATTE_BLUE))
     }
 
-    /// Gutter line number - inactive: Dark #5C6370, Light #8A909C
+    /// Gutter line number - inactive: Catppuccin Overlay0
     pub fn line_num_inactive() -> Hsla {
-        Self::pick(hex(0x5C6370), hex(0x8A909C))
+        Self::pick(hex(Self::MOCHA_OVERLAY0), hex(Self::LATTE_OVERLAY0))
     }
 
     // ==========================================
     // 5. Borders, Dividers & Focus
     // ==========================================
 
-    /// Subtle borders / dividers: Dark #2A2E37, Light #E2E5E9
+    /// Subtle borders / dividers: Catppuccin Surface0
     pub fn border_subtle() -> Hsla {
-        Self::pick(hex(0x2A2E37), hex(0xE2E5E9))
+        Self::pick(hex(Self::MOCHA_SURFACE0), hex(Self::LATTE_SURFACE0))
     }
 
-    /// Focus outline: Dark #62AEEF, Light #1A73E8
+    /// Focus outline: Catppuccin Blue
     pub fn border_focus() -> Hsla {
-        Self::pick(hex(0x62AEEF), hex(0x1A73E8))
+        Self::pick(hex(Self::MOCHA_BLUE), hex(Self::LATTE_BLUE))
     }
 
-    /// Active tab indicator: Dark #62AEEF, Light #1A73E8
+    /// Active tab top border: Catppuccin Blue
     pub fn tab_accent() -> Hsla {
-        Self::pick(hex(0x62AEEF), hex(0x1A73E8))
+        Self::pick(hex(Self::MOCHA_BLUE), hex(Self::LATTE_BLUE))
     }
 
     // ==========================================
-    // 6. Semantic Accents & Status
+    // 6. Semantic Accents & Status (Catppuccin Palette)
     // ==========================================
 
-    /// Blue accent (links, sync, references): Dark #62AEEF, Light #1A73E8
+    /// Blue: Primary accent, links, buttons, active highlights
     pub fn accent_blue() -> Hsla {
-        Self::pick(hex(0x62AEEF), hex(0x1A73E8))
+        Self::pick(hex(Self::MOCHA_BLUE), hex(Self::LATTE_BLUE))
     }
 
-    /// Green accent (build success, saved, ready): Dark #98C379, Light #2E7D32
+    /// Green: Build success, saved, ready status
     pub fn accent_green() -> Hsla {
-        Self::pick(hex(0x98C379), hex(0x2E7D32))
+        Self::pick(hex(Self::MOCHA_GREEN), hex(Self::LATTE_GREEN))
     }
 
-    /// Yellow accent (building/in-progress, warnings): Dark #E5C07B, Light #B58500
+    /// Yellow: Building in-progress, warnings, math
     pub fn accent_yellow() -> Hsla {
-        Self::pick(hex(0xE5C07B), hex(0xB58500))
+        Self::pick(hex(Self::MOCHA_YELLOW), hex(Self::LATTE_YELLOW))
     }
 
-    /// Orange accent (snippets, secondary warnings): Dark #D19A66, Light #C1580C
+    /// Peach / Orange: TODO chips, warnings, bibTeX
+    pub fn accent_peach() -> Hsla {
+        Self::pick(hex(Self::MOCHA_PEACH), hex(Self::LATTE_PEACH))
+    }
+
     pub fn accent_orange() -> Hsla {
-        Self::pick(hex(0xD19A66), hex(0xC1580C))
+        Self::accent_peach()
     }
 
-    /// Red accent (compiler errors, delete/close): Dark #E06C75, Light #D32F2F
+    /// Red / Maroon: Errors, brackets, deletions
     pub fn accent_red() -> Hsla {
-        Self::pick(hex(0xE06C75), hex(0xD32F2F))
+        Self::pick(hex(Self::MOCHA_RED), hex(Self::LATTE_RED))
     }
 
-    /// Purple accent (BibTeX citations, structure): Dark #C678DD, Light #8B3FA8
+    /// Mauve / Purple: Commands, tags, structure
+    pub fn accent_mauve() -> Hsla {
+        Self::pick(hex(Self::MOCHA_MAUVE), hex(Self::LATTE_MAUVE))
+    }
+
     pub fn accent_purple() -> Hsla {
-        Self::pick(hex(0xC678DD), hex(0x8B3FA8))
+        Self::accent_mauve()
     }
 
-    /// Cyan accent (params, file paths, tooltips): Dark #56B6C2, Light #0E8A8A
+    /// Teal / Mint: Tables, macro links, NOTE pills
+    pub fn accent_teal() -> Hsla {
+        Self::pick(hex(Self::MOCHA_TEAL), hex(Self::LATTE_TEAL))
+    }
+
     pub fn accent_cyan() -> Hsla {
-        Self::pick(hex(0x56B6C2), hex(0x0E8A8A))
+        Self::accent_teal()
+    }
+
+    /// Sapphire: Clean secondary blue
+    pub fn accent_sapphire() -> Hsla {
+        Self::pick(hex(Self::MOCHA_SAPPHIRE), hex(Self::LATTE_SAPPHIRE))
+    }
+
+    /// Lavender
+    pub fn accent_lavender() -> Hsla {
+        Self::pick(hex(Self::MOCHA_LAVENDER), hex(Self::LATTE_LAVENDER))
     }
 
     // ==========================================
     // 7. Component Overlays & Custom Badges
     // ==========================================
 
-    /// Autocomplete popup background: Dark #23262E, Light #FFFFFF
+    /// Autocomplete popup background: Catppuccin Surface0
     pub fn completion_popup_bg() -> Hsla {
-        Self::pick(hex(0x23262E), hex(0xFFFFFF))
+        Self::pick(hex(Self::MOCHA_SURFACE0), hex(Self::LATTE_SURFACE0))
     }
 
-    /// Autocomplete selected item: Dark rgba(98,174,239,0.15), Light rgba(26,115,232,0.10)
+    /// Autocomplete selected item: Surface1
     pub fn completion_selected_item_bg() -> Hsla {
         Self::pick(
-            hexa(0x62AEEF, 0.15),
-            hexa(0x1A73E8, 0.10),
+            hex(Self::MOCHA_SURFACE1),
+            hex(Self::LATTE_SURFACE1),
         )
     }
 
-    /// PDF backing canvas (behind white pages): Dark #0D0E11, Light #E4E6EA
+    /// PDF backing canvas (behind paper sheet): Catppuccin Mantle #181825
     pub fn pdf_backing_canvas() -> Hsla {
-        Self::pick(hex(0x0D0E11), hex(0xE4E6EA))
+        Self::pick(hex(Self::MOCHA_MANTLE), hex(Self::LATTE_MANTLE))
     }
 
-    /// PDF page border: Dark #2A2E37, Light #D7DAE0
+    /// PDF page border: Catppuccin Surface0
     pub fn pdf_page_border() -> Hsla {
-        Self::pick(hex(0x2A2E37), hex(0xD7DAE0))
+        Self::pick(hex(Self::MOCHA_SURFACE0), hex(Self::LATTE_SURFACE0))
     }
 
-    /// PDF SyncTeX highlight overlay: Dark rgba(98,174,239,0.30), Light rgba(26,115,232,0.22)
+    /// PDF SyncTeX highlight overlay: Catppuccin Blue glow rgba(137, 180, 250, 0.22)
     pub fn pdf_synctex_highlight() -> Hsla {
         Self::pick(
-            hexa(0x62AEEF, 0.30),
-            hexa(0x1A73E8, 0.22),
+            hexa(Self::MOCHA_BLUE, 0.22),
+            hexa(Self::LATTE_BLUE, 0.18),
         )
     }
 
-    /// PDF text search highlight: Dark rgba(229,192,123,0.40), Light rgba(181,133,0,0.30)
+    /// PDF text search highlight: Catppuccin Yellow with alpha
     pub fn pdf_search_highlight() -> Hsla {
         Self::pick(
-            hexa(0xE5C07B, 0.40),
-            hexa(0xB58500, 0.30),
+            hexa(Self::MOCHA_YELLOW, 0.35),
+            hexa(Self::LATTE_YELLOW, 0.30),
         )
     }
 
-    /// Project selector card hover glow: Dark rgba(98,174,239,0.20), Light rgba(26,115,232,0.12)
+    /// Project selector card hover glow: Catppuccin Blue
     pub fn card_hover_glow() -> Hsla {
         Self::pick(
-            hexa(0x62AEEF, 0.20),
-            hexa(0x1A73E8, 0.12),
+            hexa(Self::MOCHA_BLUE, 0.25),
+            hexa(Self::LATTE_BLUE, 0.15),
         )
     }
 
-    /// Table Editor code preview box background: Dark #16181D, Light #F5F6F8
+    /// Table Editor code preview box background: Catppuccin Crust #11111B
     pub fn table_code_preview_bg() -> Hsla {
-        Self::pick(hex(0x16181D), hex(0xF5F6F8))
+        Self::pick(hex(Self::MOCHA_CRUST), hex(Self::LATTE_CRUST))
     }
 }

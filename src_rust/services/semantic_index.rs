@@ -253,6 +253,11 @@ impl SemanticIndex {
         read.bibentries.values().cloned().collect()
     }
 
+    pub fn get_all_bib_entries_map(&self) -> std::collections::HashMap<String, BibEntryItem> {
+        let read = self.inner.read().unwrap();
+        read.bibentries.clone()
+    }
+
     pub fn get_labels_for_file(&self, file_path: &str) -> Vec<LabelItem> {
         let read = self.inner.read().unwrap();
         read.labels

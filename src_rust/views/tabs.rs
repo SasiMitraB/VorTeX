@@ -16,19 +16,21 @@ pub fn render_tab_bar(
     let on_split = on_split_pane.clone();
 
     div()
-        .h(px(32.0))
+        .h(px(34.0))
         .bg(Theme::bg_tab_bar())
         .border_b_1()
         .border_color(Theme::border_subtle())
         .flex()
         .items_center()
         .justify_between()
+        .px_1()
         .child(
             div()
                 .flex()
                 .items_center()
                 .h_full()
                 .overflow_hidden()
+                .gap_0p5()
                 .children(tabs.iter().map(|tab| {
                     let is_active = active_tab_id == Some(&tab.id);
                     let tab_id = tab.id.clone();
@@ -36,9 +38,15 @@ pub fn render_tab_bar(
                     let on_sw = on_switch_tab.clone();
                     let on_cl = on_close_tab.clone();
 
-                    let icon = match tab.tab_type {
-                        TabType::Text => "λ",
-                        TabType::Pdf => "📄",
+                    let (icon, icon_color) = match tab.tab_type {
+                        TabType::Text => {
+                            if tab.name.ends_with(".bib") {
+                                ("❞", Theme::accent_peach())
+                            } else {
+                                ("λ", Theme::accent_sapphire())
+                            }
+                        }
+                        TabType::Pdf => ("📄", Theme::accent_red()),
                     };
 
                     div()
@@ -48,25 +56,46 @@ pub fn render_tab_bar(
                         .items_center()
                         .gap_2()
                         .cursor_pointer()
-                        .border_r_1()
-                        .border_color(Theme::border_subtle())
-                        .bg(if is_active { Theme::bg_tab_active() } else { Theme::bg_tab_inactive() })
-                        .when(is_active, |d| d.border_b_2().border_color(Theme::tab_accent()))
+                        .rounded_t_md()
+                        .when(is_active, |d| {
+                            d.bg(Theme::bg_tab_active())
+                                .border_t_2()
+                                .border_color(Theme::accent_blue())
+                                .border_r_1()
+                                .border_l_1()
+                                .border_color(Theme::border_subtle())
+                        })
+                        .when(!is_active, |d| {
+                            d.bg(Theme::bg_tab_bar())
+                                .hover(|h| h.bg(Theme::bg_hover()))
+                        })
                         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                             on_sw(tab_id.clone(), pane_side, window, cx);
                         })
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(if is_active { Theme::accent_blue() } else { Theme::text_dim() })
+                                .font_family(".AppleSystemUIFontMonospaced")
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(icon_color)
                                 .child(icon),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(if is_active { Theme::text_bright() } else { Theme::text_primary() })
-                                .child(format!("{}{}", tab.name, if tab.dirty { " •" } else { "" })),
+                                .font_weight(if is_active { FontWeight::MEDIUM } else { FontWeight::NORMAL })
+                                .text_color(if is_active { Theme::text_bright() } else { Theme::text_muted() })
+                                .child(tab.name.clone()),
                         )
+                        .when(tab.dirty, |d| {
+                            d.child(
+                                div()
+                                    .w(px(5.0))
+                                    .h(px(5.0))
+                                    .rounded_full()
+                                    .bg(Theme::accent_blue()),
+                            )
+                        })
                         .child(
                             div()
                                 .w(px(16.0))
@@ -82,7 +111,7 @@ pub fn render_tab_bar(
                                 .child(
                                     div()
                                         .text_xs()
-                                        .text_color(Theme::text_muted())
+                                        .text_color(Theme::text_dim())
                                         .child("×"),
                                 ),
                         )
@@ -102,7 +131,7 @@ pub fn render_tab_bar(
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(Theme::text_muted())
+                                .text_color(Theme::text_dim())
                                 .child("+"),
                         ),
                 ),
@@ -111,6 +140,8 @@ pub fn render_tab_bar(
             // Split view toggle button
             div()
                 .px_2()
+                .py_1()
+                .rounded_sm()
                 .cursor_pointer()
                 .hover(|h| h.bg(Theme::bg_hover()))
                 .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
@@ -124,3 +155,4 @@ pub fn render_tab_bar(
                 ),
         )
 }
+

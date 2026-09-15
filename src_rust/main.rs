@@ -193,6 +193,9 @@ impl VorTexApp {
         if let Ok(todos) = self.state.backend.get_todos(None) {
             self.state.todos = todos;
         }
+        // Load all labels
+        let all_labels = self.state.backend.get_all_labels().unwrap_or_default();
+        self.state.outline_labels = all_labels;
 
         // Auto open main.tex if available
         let main_tex = std::path::Path::new(&project_path).join("main.tex");
@@ -241,6 +244,9 @@ impl VorTexApp {
             if let Ok(todos) = self.state.backend.get_todos(None) {
                 self.state.todos = todos;
             }
+            // Refresh all labels
+            let all_labels = self.state.backend.get_all_labels().unwrap_or_default();
+            self.state.outline_labels = all_labels;
         }
 
         cx.notify();
@@ -868,8 +874,10 @@ impl Render for VorTexApp {
                 let file_tree = self.state.file_tree.clone();
                 let expanded_folders = self.state.expanded_folders.clone();
                 let outline_sections = self.state.outline_sections.clone();
-                let outline_tables = self.state.outline_tables.clone();
+                let _outline_tables = self.state.outline_tables.clone();
+                let outline_labels = self.state.outline_labels.clone();
                 let todos = self.state.todos.clone();
+                let sidebar_label_filter = self.state.sidebar_label_filter;
                 let active_tab_path = self.state.active_tab().and_then(|t| t.path.clone());
                 let act_sidebar = active_tab_path.clone();
                 let act_statusbar = active_tab_path.clone();
@@ -948,6 +956,7 @@ impl Render for VorTexApp {
                 let v_select_sidebar_tab = view_handle.clone();
                 let v_jump_location = view_handle.clone();
                 let v_open_table = view_handle.clone();
+                let v_label_filter = view_handle.clone();
 
                 let v_sw_left = view_handle.clone();
                 let v_cl_left = view_handle.clone();
@@ -1144,7 +1153,8 @@ impl Render for VorTexApp {
                                     &file_tree,
                                     &expanded_folders,
                                     &outline_sections,
-                                    &outline_tables,
+                                    &outline_labels,
+                                    sidebar_label_filter,
                                     &todos,
                                     act_sidebar.as_deref(),
                                     &tree_scroll,
@@ -1153,6 +1163,12 @@ impl Render for VorTexApp {
                                     move |tab, _window, cx| {
                                         v_select_sidebar_tab.update(cx, |this, cx| {
                                             this.state.sidebar_tab = tab;
+                                            cx.notify();
+                                        });
+                                    },
+                                    move |filter, _window, cx| {
+                                        v_label_filter.update(cx, |this, cx| {
+                                            this.state.sidebar_label_filter = filter;
                                             cx.notify();
                                         });
                                     },

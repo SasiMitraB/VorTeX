@@ -282,7 +282,8 @@ pub fn render_project_selector(
                                 let preview_image = proj.preview_image.clone();
 
                                 div()
-                                    .w(px(280.0))
+                                    .flex_1()
+                                    .min_w(px(220.0))
                                     .bg(Theme::bg_card())
                                     .border_1()
                                     .border_color(Theme::border_subtle())
@@ -298,19 +299,17 @@ pub fn render_project_selector(
                                         // Preview thumbnail area
                                         if let Some(img_path) = preview_image {
                                             div()
-                                                .h(px(175.0))
                                                 .w_full()
+                                                .h(px(210.0))
                                                 .bg(Theme::bg_sidebar())
                                                 .relative()
                                                 .overflow_hidden()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
                                                 .child(
                                                     img(std::path::PathBuf::from(&img_path))
-                                                        .w_full()
-                                                        .h_full()
-                                                        .object_fit(gpui::ObjectFit::Cover),
+                                                        .absolute()
+                                                        .top_0()
+                                                        .left_0()
+                                                        .w_full(),
                                                 )
                                                 .child(
                                                     div()
@@ -330,8 +329,8 @@ pub fn render_project_selector(
                                                 )
                                         } else {
                                             div()
-                                                .h(px(175.0))
                                                 .w_full()
+                                                .h(px(175.0))
                                                 .bg(Theme::bg_sidebar())
                                                 .flex()
                                                 .flex_col()

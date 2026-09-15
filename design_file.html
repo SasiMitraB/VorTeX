@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+
+<html class="dark h-full" lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>VorTeX — Catppuccin Mocha LaTeX Studio</title>
+  <!-- Tailwind CSS CDN with Forms and Container Queries -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&amp;family=Inter:wght@300;400;500;600;700&amp;display=swap"
+    rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            cat: {
+              crust: '#11111b',
+              mantle: '#181825',
+              base: '#1e1e2e',
+              surface0: '#313244',
+              surface1: '#45475a',
+              surface2: '#585b70',
+              overlay0: '#6c7086',
+              overlay1: '#7f849c',
+              overlay2: '#9399b2',
+              subtext0: '#a6adc8',
+              subtext1: '#bac2de',
+              text: '#cdd6f4',
+              blue: '#89b4fa',
+              lavender: '#b4befe',
+              sapphire: '#74c7ec',
+              sky: '#89dceb',
+              teal: '#94e2d5',
+              green: '#a6e3a1',
+              yellow: '#f9e2af',
+              peach: '#fab387',
+              maroon: '#eba0ac',
+              red: '#f38ba8',
+              mauve: '#cba6f7',
+              pink: '#f5c2e7',
+              flamingo: '#f2cdcd',
+              rosewater: '#f5e0dc'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"SF Pro Display"', 'Helvetica Neue', 'sans-serif'],
+            mono: ['"JetBrains Mono"', '"SF Mono"', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+          },
+          boxShadow: {
+            'window': '0 25px 60px -15px rgba(0, 0, 0, 0.75), 0 0 0 1px #313244',
+            'glass-hud': '0 12px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+            'pill-glow': '0 0 12px rgba(137, 180, 250, 0.3)'
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Custom Styles for Catppuccin Scrollbars & LaTeX Paper Rendering -->
+  <style data-purpose="catppuccin-chrome-styles">
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #313244;
+      border-radius: 4px;
+      border: 1px solid transparent;
+      background-clip: padding-box;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #45475a;
+    }
+
+    .macos-traffic-light {
+      transition: opacity 0.15s ease;
+    }
+
+    .macos-traffic-light:hover .traffic-symbol {
+      opacity: 0.65;
+    }
+
+    .traffic-symbol {
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+  </style>
+  <style data-purpose="latex-paper-rendering">
+    .paper-sheet {
+      box-shadow: 0 18px 45px -10px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+      transform-origin: top center;
+    }
+
+    .two-column-layout {
+      column-count: 2;
+      column-gap: 24px;
+      column-rule: 0.5px solid rgba(0, 0, 0, 0.12);
+    }
+
+    .synctex-highlight {
+      position: relative;
+      background-color: rgba(137, 180, 250, 0.14);
+      box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.5), 0 0 12px rgba(137, 180, 250, 0.2);
+      border-radius: 3px;
+    }
+  </style>
+</head>
+
+<body
+  class="h-full bg-cat-crust text-cat-text font-sans antialiased overflow-hidden flex items-center justify-center p-2 lg:p-4 select-none">
+  <!-- BEGIN: NativeMacWindow (Catppuccin Mocha Shell) -->
+  <div
+    class="w-full h-full max-w-[1920px] max-h-[1080px] bg-cat-crust rounded-2xl flex flex-col overflow-hidden shadow-window border border-cat-surface0 text-sm backdrop-blur-2xl relative">
+    <!-- BEGIN: UnifiedWindowToolbar -->
+    <header
+      class="h-12 bg-cat-mantle/95 border-b border-cat-surface0 flex items-center justify-between px-3.5 z-30 shrink-0 backdrop-blur-xl"
+      data-purpose="unified-mac-toolbar">
+      <!-- Left cluster: Traffic lights & Quick Switcher -->
+      <div class="flex items-center space-x-3.5 min-w-[280px]">
+        <!-- Traffic lights -->
+        <div class="flex items-center space-x-2 mr-2">
+          <button
+            class="macos-traffic-light w-3 h-3 rounded-full bg-[#f38ba8] border border-[#f38ba8]/60 flex items-center justify-center text-[8px] text-[#450a1b] leading-none focus:outline-none">
+            <span class="traffic-symbol font-bold">×</span>
+          </button>
+          <button
+            class="macos-traffic-light w-3 h-3 rounded-full bg-[#f9e2af] border border-[#f9e2af]/60 flex items-center justify-center text-[9px] text-[#4d3c00] leading-none focus:outline-none">
+            <span class="traffic-symbol font-bold">–</span>
+          </button>
+          <button
+            class="macos-traffic-light w-3 h-3 rounded-full bg-[#a6e3a1] border border-[#a6e3a1]/60 flex items-center justify-center text-[7px] text-[#063b11] leading-none focus:outline-none">
+            <span class="traffic-symbol font-bold">＋</span>
+          </button>
+        </div>
+        <!-- Sidebar toggler & Explorer button -->
+        <button class="p-1.5 rounded-md hover:bg-cat-surface0 text-cat-overlay0 hover:text-cat-text transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+            <path d="M4 6h16M4 12h10M4 18h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"></path>
+          </svg>
+        </button>
+        <!-- Project breadcrumb dropdown -->
+        <div
+          class="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-cat-surface0/60 border border-cat-surface0 hover:bg-cat-surface0 cursor-pointer transition">
+          <div class="w-2 h-2 rounded-full bg-cat-green animate-pulse"></div>
+          <span class="font-medium text-xs tracking-tight text-cat-text">BeharaSeta2026</span>
+          <svg class="w-3 h-3 text-cat-overlay0" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+            <path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+          </svg>
+        </div>
+        <!-- Folder / Open files icon buttons -->
+        <div class="hidden sm:flex items-center space-x-1">
+          <button
+            class="p-1.5 rounded-md hover:bg-cat-surface0 text-cat-overlay0 hover:text-cat-text text-xs flex items-center gap-1"
+            title="Open Folder">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round"
+                stroke-linejoin="round" stroke-width="1.8"></path>
+            </svg>
+          </button>
+          <button
+            class="p-1.5 rounded-md hover:bg-cat-surface0 text-cat-overlay0 hover:text-cat-text text-xs flex items-center gap-1"
+            title="New TeX File">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+              <path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <!-- Center cluster: Segmented Tabs & Quick Actions -->
+      <div class="flex items-center space-x-2">
+        <div class="flex items-center bg-cat-crust/90 p-0.5 rounded-lg border border-cat-surface0">
+          <button
+            class="flex items-center space-x-1.5 px-3 py-1 bg-cat-surface0 text-cat-blue rounded-md text-xs font-medium shadow-sm transition">
+            <svg class="w-3.5 h-3.5 text-cat-blue" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+              <path d="M4 6h16M4 10h16M4 14h8M4 18h8" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+              </path>
+            </svg>
+            <span>Outline</span>
+          </button>
+          <button
+            class="flex items-center space-x-1.5 px-3 py-1 text-cat-subtext0 hover:text-cat-text rounded-md text-xs transition hover:bg-cat-surface0/40">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round"
+                stroke-linejoin="round" stroke-width="2"></path>
+            </svg>
+            <span>Explorer</span>
+          </button>
+        </div>
+        <button
+          class="hidden md:flex items-center space-x-2 px-2.5 py-1 bg-cat-surface0/50 hover:bg-cat-surface0 border border-cat-surface0 rounded-md text-xs text-cat-subtext0 hover:text-cat-text transition">
+          <svg class="w-3.5 h-3.5 text-cat-overlay0" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round"
+              stroke-width="2"></path>
+          </svg>
+          <span>Jump to label</span>
+          <span class="px-1 py-0.5 text-[10px] bg-cat-surface1 rounded font-mono text-cat-subtext1">⌘P</span>
+        </button>
+      </div>
+      <!-- Right cluster: Build Engine, Clean Theme Toggle (Mocha/Latte), Window Controls -->
+      <div class="flex items-center space-x-2.5">
+        <!-- Engine badge -->
+        <div
+          class="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-cat-surface0/60 border border-cat-surface0 text-cat-subtext1 text-xs font-sans hover:bg-cat-surface0 cursor-pointer transition">
+          <span class="w-1.5 h-1.5 rounded-full bg-cat-green"></span>
+          <span class="text-[11px] font-medium font-mono text-cat-text">LuaTeX</span>
+          <svg class="w-3 h-3 text-cat-overlay0 ml-0.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+            <path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+          </svg>
+        </div>
+        <!-- Build button -->
+        <button
+          class="flex items-center space-x-1.5 px-3 py-1 rounded-md bg-cat-blue hover:bg-cat-blue/90 text-cat-crust border border-cat-blue/80 text-xs font-semibold transition shadow-sm active:scale-95 group">
+          <svg class="w-3.5 h-3.5 fill-current transition-transform group-hover:scale-110" viewbox="0 0 24 24">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <span>Build</span>
+          <span class="px-1 py-0.2 bg-cat-crust/20 rounded text-[10px] font-mono text-cat-crust font-medium">⌘B</span>
+        </button>
+        <!-- Theme Switcher Pill: Mocha (Dark) / Latte Support -->
+        <div class="flex items-center bg-cat-surface0/80 p-0.5 rounded-md border border-cat-surface0 text-xs font-sans"
+          title="Active Theme: Catppuccin Mocha (Click to switch to Latte)">
+          <button
+            class="flex items-center space-x-1.5 px-2 py-1 rounded bg-cat-base text-cat-mauve text-[11px] font-medium shadow-sm transition">
+            <span class="w-2 h-2 rounded-full bg-cat-mauve"></span>
+            <span>Mocha</span>
+          </button>
+          <button
+            class="flex items-center space-x-1 px-2 py-1 rounded text-cat-overlay0 hover:text-cat-text text-[11px] transition">
+            <span>Latte</span>
+          </button>
+        </div>
+        <!-- Layout control -->
+        <div class="flex items-center bg-cat-surface0/60 p-0.5 rounded-md border border-cat-surface0">
+          <button class="p-1 rounded hover:bg-cat-surface1 text-cat-overlay0 hover:text-cat-text"
+            title="Toggle Split View">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+              <path d="M9 4v16M15 4v16M4 4h16v16H4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+              </path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+    <!-- END: UnifiedWindowToolbar -->
+    <!-- BEGIN: MainThreePaneWorkspace -->
+    <main class="flex-1 flex overflow-hidden divide-x divide-cat-surface0 bg-cat-crust">
+      <!-- LEFT SIDEBAR: Document Hierarchy & Project Explorer (Catppuccin Mantle) -->
+      <!-- BEGIN: DocumentSidebar -->
+      <aside class="w-72 bg-cat-mantle flex flex-col shrink-0 overflow-hidden" data-purpose="document-outline-sidebar">
+        <!-- Sidebar Category Header -->
+        <div
+          class="p-3 border-b border-cat-surface0 flex items-center justify-between text-xs tracking-wider uppercase font-semibold text-cat-subtext0">
+          <div class="flex items-center space-x-2">
+            <span>Project Outline</span>
+            <span class="px-1.5 py-0.2 rounded-full bg-cat-surface0 text-[10px] text-cat-subtext1 font-mono">37</span>
+          </div>
+          <button class="text-cat-overlay0 hover:text-cat-text transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+              <path
+                d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+            </svg>
+          </button>
+        </div>
+        <!-- Section Navigation Tree -->
+        <div class="flex-1 overflow-y-auto px-2 py-2 space-y-0.5 text-xs font-sans">
+          <!-- Section Item -->
+          <div
+            class="flex items-center justify-between px-2.5 py-1.5 rounded-md text-cat-subtext1 hover:text-cat-text hover:bg-cat-surface0/60 cursor-pointer group transition">
+            <div class="flex items-center space-x-2 truncate">
+              <span class="text-cat-overlay0 font-mono text-[11px]">§</span>
+              <span class="truncate text-[11.5px]"><span class="text-cat-yellow font-mono">$\mathcal{M}$</span> is
+                monotonically decreasing with <span class="text-cat-yellow font-mono">$\kappa$</span></span>
+            </div>
+            <span class="text-[10px] font-mono text-cat-overlay0 group-hover:text-cat-subtext0">:62</span>
+          </div>
+          <!-- Section Item -->
+          <div
+            class="flex items-center justify-between px-2.5 py-1.5 rounded-md text-cat-subtext1 hover:text-cat-text hover:bg-cat-surface0/60 cursor-pointer group transition">
+            <div class="flex items-center space-x-2 truncate">
+              <span class="text-cat-overlay0 font-mono text-[11px]">§</span>
+              <span class="truncate text-[11.5px]">Estimating <span class="text-cat-yellow font-mono">$\kappa_{\mathrm
+                  {min, max}}$</span></span>
+            </div>
+            <span class="text-[10px] font-mono text-cat-overlay0 group-hover:text-cat-subtext0">:102</span>
+          </div>
+          <!-- Section Item: Active (Catppuccin Sapphire / Blue selection) -->
+          <div
+            class="flex items-center justify-between px-2.5 py-1.5 rounded-md bg-cat-surface0 text-cat-text border-l-2 border-cat-blue font-medium cursor-pointer group shadow-sm">
+            <div class="flex items-center space-x-2 truncate">
+              <span class="text-cat-blue font-mono text-[11px]">§</span>
+              <span class="truncate text-[11.5px] text-cat-text font-medium">Theoretical models of density &amp;
+                PDF</span>
+            </div>
+            <span class="text-[10px] font-mono text-cat-blue">:142</span>
+          </div>
+          <!-- Sub-item -->
+          <div
+            class="flex items-center justify-between pl-6 pr-2.5 py-1.5 rounded-md text-cat-subtext0 hover:text-cat-text hover:bg-cat-surface0/50 cursor-pointer group transition">
+            <div class="flex items-center space-x-2 truncate">
+              <span class="text-cat-overlay0 font-mono">↳</span>
+              <span class="truncate text-[11.5px]">Turbulent model I: lognormal</span>
+            </div>
+            <span class="text-[10px] font-mono text-cat-overlay0 group-hover:text-cat-subtext0">:169</span>
+          </div>
+          <!-- Sub-item -->
+          <div
+            class="flex items-center justify-between pl-6 pr-2.5 py-1.5 rounded-md text-cat-subtext0 hover:text-cat-text hover:bg-cat-surface0/50 cursor-pointer group transition">
+            <div class="flex items-center space-x-2 truncate">
+              <span class="text-cat-overlay0 font-mono">↳</span>
+              <span class="truncate text-[11.5px]">Castaing-Hopkins (non-lognormal)</span>
+            </div>
+            <span class="text-[10px] font-mono text-cat-overlay0 group-hover:text-cat-subtext0">:182</span>
+          </div>
+          <!-- Table Section Header -->
+          <div
+            class="pt-4 pb-1 px-2.5 flex items-center justify-between text-[11px] font-semibold text-cat-subtext0 uppercase tracking-wider">
+            <span>Tables &amp; Captions</span>
+            <span class="text-[10px] font-mono text-cat-overlay0">2</span>
+          </div>
+          <!-- Table Item -->
+          <div
+            class="flex items-center justify-between px-2.5 py-1.5 rounded-md text-cat-subtext1 hover:text-cat-text hover:bg-cat-surface0/60 cursor-pointer group transition">
+            <div class="flex items-center space-x-2 truncate">
+              <span
+                class="w-3.5 h-3.5 rounded bg-cat-surface0 text-cat-teal flex items-center justify-center text-[9px]">⊞</span>
+              <span class="truncate text-[11.5px]">The four <span class="text-cat-yellow font-mono">$PDF$</span> models
+                fitted</span>
+            </div>
+            <span class="text-[10px] font-mono text-cat-overlay0">m:332</span>
+          </div>
+          <!-- TODO List Card Group -->
+          <div
+            class="pt-4 pb-1 px-2.5 flex items-center justify-between text-[11px] font-semibold text-cat-subtext0 uppercase tracking-wider">
+            <span>TODO &amp; Notes</span>
+            <span
+              class="px-1.5 py-0.2 rounded bg-cat-surface0 text-cat-peach text-[10px] font-mono font-medium">7</span>
+          </div>
+          <!-- Todo item note 1 -->
+          <div
+            class="p-2.5 rounded-md bg-cat-surface0/40 border border-cat-surface0 space-y-1 hover:border-cat-surface1 transition cursor-pointer">
+            <div class="flex items-center justify-between">
+              <span
+                class="px-1.5 py-0.2 rounded bg-cat-surface1 text-cat-teal text-[9px] font-bold uppercase tracking-wider">NOTE</span>
+              <span class="text-[10px] font-mono text-cat-overlay0">main.tex:26</span>
+            </div>
+            <p class="text-[11px] text-cat-subtext1 leading-snug line-clamp-2">amsmath not needed - newtxmath from MNRAS
+              already provides math symbols</p>
+          </div>
+          <!-- Todo item note 2 -->
+          <div
+            class="p-2.5 rounded-md bg-cat-surface0/40 border border-cat-surface0 space-y-1 hover:border-cat-surface1 transition cursor-pointer">
+            <div class="flex items-center justify-between">
+              <span
+                class="px-1.5 py-0.2 rounded bg-cat-surface1 text-cat-peach text-[9px] font-bold uppercase tracking-wider">TODO</span>
+              <span class="text-[10px] font-mono text-cat-overlay0">main.tex:118</span>
+            </div>
+            <p class="text-[11px] text-cat-subtext1 leading-snug line-clamp-2">Write the introduction section and cite
+              Hopkins (2013) density PDF.</p>
+          </div>
+        </div>
+        <!-- Sidebar Footer Status -->
+        <div
+          class="p-2.5 border-t border-cat-surface0 bg-cat-crust flex items-center justify-between text-[11px] text-cat-subtext0">
+          <span class="truncate text-cat-overlay1">Workspace: BeharaSeta2026</span>
+          <span class="text-cat-subtext0 flex items-center gap-1.5 font-mono text-[10.5px]">
+            <span class="w-1.5 h-1.5 rounded-full bg-cat-green"></span>Ready
+          </span>
+        </div>
+      </aside>
+      <!-- END: DocumentSidebar -->
+      <!-- CENTER: Monospace LaTeX Code Editor (Catppuccin Base #1e1e2e) -->
+      <!-- BEGIN: LaTeXCodeEditor -->
+      <section class="flex-1 flex flex-col min-w-0 bg-cat-base" data-purpose="latex-code-editor">
+        <!-- Tab Bar -->
+        <div
+          class="h-9 bg-cat-mantle border-b border-cat-surface0 flex items-center justify-between px-2 overflow-x-auto select-none"
+          data-purpose="editor-tabs">
+          <div class="flex items-center space-x-1">
+            <!-- Inactive Tab -->
+            <div
+              class="flex items-center space-x-2 px-3 py-1.5 rounded-t-md text-cat-overlay1 hover:text-cat-text hover:bg-cat-surface0/40 text-xs cursor-pointer transition">
+              <span class="text-cat-sapphire font-mono text-[11px]">λ</span>
+              <span>Welcome.tex</span>
+              <span
+                class="hover:bg-cat-surface1 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[10px]">×</span>
+            </div>
+            <!-- Active Document Tab with dirty dot -->
+            <div
+              class="flex items-center space-x-2 px-3.5 py-1.5 bg-cat-base border-t-2 border-cat-blue text-cat-text font-medium text-xs rounded-t-md cursor-pointer border-b border-cat-base">
+              <span class="text-cat-sapphire font-mono text-[11px]">λ</span>
+              <span>main.tex</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-cat-blue ml-0.5"></span>
+              <span
+                class="hover:bg-cat-surface1 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[10px] ml-1">×</span>
+            </div>
+            <!-- Additional Tab -->
+            <div
+              class="flex items-center space-x-2 px-3 py-1.5 rounded-t-md text-cat-overlay1 hover:text-cat-text hover:bg-cat-surface0/40 text-xs cursor-pointer transition">
+              <span class="text-cat-peach font-mono text-[11px]">❞</span>
+              <span>references.bib</span>
+              <span
+                class="hover:bg-cat-surface1 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[10px]">×</span>
+            </div>
+          </div>
+          <!-- Split editor icons -->
+          <div class="flex items-center space-x-1 text-cat-overlay0">
+            <button class="p-1 rounded hover:bg-cat-surface0 hover:text-cat-text" title="Split Editor Right">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+                <path d="M12 4v16m-8-16h16v16H4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+                </path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <!-- Editor Breadcrumb Navigation -->
+        <div
+          class="h-6 px-4 bg-cat-base border-b border-cat-surface0 flex items-center space-x-2 text-[11px] text-cat-overlay1 font-mono">
+          <span class="hover:text-cat-text cursor-pointer">BeharaSeta2026</span>
+          <span class="text-cat-surface2">/</span>
+          <span class="hover:text-cat-text cursor-pointer">main.tex</span>
+          <span class="text-cat-surface2">/</span>
+          <span class="text-cat-mauve font-semibold">abstract</span>
+          <span class="text-cat-surface2">/</span>
+          <span class="text-cat-subtext0">line 102</span>
+        </div>
+        <!-- Code Workspace: Gutter + Syntax Area (Authentic Catppuccin Mocha Syntax) -->
+        <div
+          class="flex-1 overflow-y-auto flex font-mono text-[12.5px] leading-relaxed relative selection:bg-cat-surface1 selection:text-cat-text">
+          <!-- Line Numbers Gutter -->
+          <div
+            class="w-12 py-3 bg-cat-mantle/70 border-r border-cat-surface0 text-right pr-3 select-none text-cat-overlay0 font-mono text-xs space-y-0.5 shrink-0">
+            <div>75</div>
+            <div>76</div>
+            <div>77</div>
+            <div>78</div>
+            <div>79</div>
+            <div>80</div>
+            <div>81</div>
+            <div>82</div>
+            <div>83</div>
+            <div>84</div>
+            <div>85</div>
+            <div>86</div>
+            <div>87</div>
+            <div>88</div>
+            <div>89</div>
+            <div>90</div>
+            <div>91</div>
+            <div>92</div>
+            <div>93</div>
+            <div>94</div>
+            <div>95</div>
+            <div>96</div>
+            <div>97</div>
+            <div>98</div>
+            <div>99</div>
+            <div>100</div>
+            <div class="text-cat-blue font-semibold">101</div>
+            <div class="text-cat-blue font-bold">102</div>
+            <div class="text-cat-blue font-semibold">103</div>
+            <div>104</div>
+          </div>
+          <!-- Code Content Pane -->
+          <div class="flex-1 py-3 px-4 overflow-x-auto space-y-0.5 text-cat-text">
+            <!-- Code Line 75 -->
+            <div>
+              <span class="text-cat-mauve font-bold">\title</span><span class="text-cat-red">[</span><span
+                class="text-cat-subtext1">Non-lognormal density PDFs and turbulent Mach Numbers from 3D data</span><span
+                class="text-cat-red">]</span><span class="text-cat-red">{</span><span
+                class="text-cat-text font-medium">Non-lognormal density probability distribution and turbulent Mach
+                numbers in the local Interstellar Medium from three-dimensional data</span><span
+                class="text-cat-red">}</span>
+            </div>
+            <!-- Code Line 77 -->
+            <div class="text-cat-overlay0 italic">% The list of authors, and the short list which is used in the
+              headers.</div>
+            <div class="text-cat-overlay0 italic">% If you need two or more lines of authors, add an extra line using
+              \newauthor</div>
+            <!-- Line 80 -->
+            <div>
+              <span class="text-cat-mauve font-bold">\author</span><span class="text-cat-red">[</span><span
+                class="text-cat-subtext1">Behara \&amp; Seta</span><span class="text-cat-red">]</span><span
+                class="text-cat-red">{</span>
+            </div>
+            <!-- Line 81 -->
+            <div class="pl-4">
+              <span class="text-cat-text">Sasi M. Behara</span><span class="text-cat-mauve font-semibold">$^{1,
+                2}$\thanks</span><span class="text-cat-red">{</span><span class="text-cat-subtext0">E-mail: </span><span
+                class="text-cat-teal font-bold">\href</span><span class="text-cat-red">{</span><span
+                class="text-cat-sapphire underline">mailto:beharasasi.mitra@iisertirupati.ac.in</span><span
+                class="text-cat-red">}</span><span class="text-cat-red">}</span>
+            </div>
+            <!-- Line 82 -->
+            <div class="pl-4">
+              <span class="text-cat-text">and Amit Seta</span><span
+                class="text-cat-mauve font-semibold">$^{1}$\thanks</span><span class="text-cat-red">{</span><span
+                class="text-cat-subtext0">E-mail: </span><span class="text-cat-teal font-bold">\href</span><span
+                class="text-cat-red">{</span><span
+                class="text-cat-sapphire underline">mailto:amit.seta@anu.edu.au</span><span
+                class="text-cat-red">}</span><span class="text-cat-red">}</span>
+            </div>
+            <!-- Line 83 -->
+            <div><span class="text-cat-red">}</span></div>
+            <div class="h-2"></div>
+            <!-- Line 85 -->
+            <div><span class="text-cat-mauve font-bold">\date</span><span class="text-cat-red">{</span><span
+                class="text-cat-peach">Accepted XXX. Received YYY; in original form ZZZ</span><span
+                class="text-cat-red">}</span></div>
+            <div><span class="text-cat-mauve font-bold">\pubyear</span><span class="text-cat-red">{</span><span
+                class="text-cat-teal">\the\year</span><span class="text-cat-red">}</span></div>
+            <div class="text-cat-overlay0 italic py-1">%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%</div>
+            <!-- Line 95 -->
+            <div><span class="text-cat-mauve font-bold">\begin</span><span class="text-cat-red">{</span><span
+                class="text-cat-green font-semibold">document</span><span class="text-cat-red">}</span></div>
+            <div class="pl-2"><span class="text-cat-mauve font-bold">\label</span><span
+                class="text-cat-red">{</span><span class="text-cat-sapphire">firstpage</span><span
+                class="text-cat-red">}</span></div>
+            <div class="pl-2"><span class="text-cat-mauve font-bold">\pagerange</span><span
+                class="text-cat-red">{</span><span class="text-cat-teal">\pageref</span><span
+                class="text-cat-red">{</span><span class="text-cat-sapphire">firstpage</span><span
+                class="text-cat-red">}</span>--<span class="text-cat-teal">\pageref</span><span
+                class="text-cat-red">{</span><span class="text-cat-sapphire">lastpage</span><span
+                class="text-cat-red">}</span><span class="text-cat-red">}</span></div>
+            <div class="pl-2"><span class="text-cat-mauve font-bold">\maketitle</span></div>
+            <div class="h-2"></div>
+            <!-- Line 100: Abstract Section -->
+            <div class="text-cat-overlay0 italic pl-2">% Abstract block</div>
+            <div class="pl-2"><span class="text-cat-mauve font-bold">\begin</span><span
+                class="text-cat-red">{</span><span class="text-cat-green font-semibold">abstract</span><span
+                class="text-cat-red">}</span></div>
+            <!-- Line 102 (Cursor Active Line with Subtle Catppuccin Surface Tone) -->
+            <div class="relative pl-2 py-0.5 rounded bg-cat-surface0/60 border-l-2 border-cat-blue -ml-2 pl-4">
+              <span class="text-cat-text">The probability distribution function (</span><span
+                class="text-cat-yellow font-bold">$\mathrm{PDF}$</span><span class="text-cat-text">) of gas density is a
+                key tool used to study turbulence and star formation in the interstellar medium (ISM), and is typically
+                modelled as a lognormal distribution. Observational studies have been limited to two-dimensional
+                column-density maps, which fail to capture the intermittency...</span>
+              <!-- Subtle, unobtrusive cursor info pill -->
+              <div
+                class="absolute -top-7 right-4 z-20 px-2 py-0.5 rounded bg-cat-surface0 border border-cat-surface1 shadow-sm flex items-center space-x-1.5 text-[10px] text-cat-subtext0">
+                <span class="w-1.5 h-1.5 rounded-full bg-cat-blue"></span>
+                <span>§ abstract • L102</span>
+              </div>
+            </div>
+            <!-- Line 103 -->
+            <div class="pl-2"><span class="text-cat-mauve font-bold">\end</span><span class="text-cat-red">{</span><span
+                class="text-cat-green font-semibold">abstract</span><span class="text-cat-red">}</span></div>
+          </div>
+        </div>
+      </section>
+      <!-- END: LaTeXCodeEditor -->
+      <!-- RIGHT: High-Precision PDF Preview Pane (Catppuccin Mantle Viewport) -->
+      <!-- BEGIN: PDFPreviewPane -->
+      <section class="flex-1 flex flex-col min-w-0 bg-cat-mantle relative overflow-hidden"
+        data-purpose="pdf-preview-viewport">
+        <!-- Document Toolbar HUD Header -->
+        <div
+          class="h-9 bg-cat-crust border-b border-cat-surface0 flex items-center justify-between px-3 z-10 select-none">
+          <div class="flex items-center space-x-2">
+            <span class="text-xs font-semibold text-cat-text font-sans">main.pdf</span>
+            <span class="text-cat-surface2">•</span>
+            <span class="text-[11px] text-cat-subtext0">15 pages</span>
+            <span class="px-1.5 py-0.2 rounded-full bg-cat-surface0 text-cat-teal text-[10px] font-mono">100%
+              Synced</span>
+          </div>
+          <!-- Quick action icons -->
+          <div class="flex items-center space-x-1 text-cat-overlay0">
+            <button class="p-1 rounded hover:bg-cat-surface0 hover:text-cat-text" title="Reload PDF">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+                <path
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+              </svg>
+            </button>
+            <button class="p-1 rounded hover:bg-cat-surface0 hover:text-cat-text" title="Detach Preview to Window">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+                <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                  stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <!-- Floating Glass Zoom & Navigation HUD -->
+        <div
+          class="absolute top-12 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2 px-3 py-1.5 rounded-full bg-cat-base/90 border border-cat-surface0 shadow-glass-hud backdrop-blur-xl text-xs text-cat-text">
+          <button class="hover:text-cat-blue font-mono px-1">-</button>
+          <span class="font-mono text-[11px] px-1 text-cat-blue font-medium">100%</span>
+          <button class="hover:text-cat-blue font-mono px-1">+</button>
+          <span class="text-cat-surface2">|</span>
+          <button class="hover:text-cat-blue p-0.5" title="Fit Page">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+              <path d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+            </svg>
+          </button>
+          <button class="hover:text-cat-blue p-0.5" title="Two-page spread">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+              <path
+                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+            </svg>
+          </button>
+        </div>
+        <!-- Rendered PDF Viewport -->
+        <div class="flex-1 overflow-y-auto p-6 flex flex-col items-center space-y-6">
+          <!-- Realistic Academic Journal Page (MNRAS Astronomy Paper) -->
+          <article
+            class="paper-sheet w-full max-w-[620px] bg-[#fbfbfd] text-neutral-900 px-10 py-10 rounded-sm font-serif select-text relative"
+            data-purpose="rendered-latex-page">
+            <!-- Journal Top Running Header -->
+            <div
+              class="flex justify-between items-center text-[8.5px] font-sans text-neutral-500 border-b border-neutral-300 pb-1 mb-5">
+              <span>MNRAS 000, 1–13 (2026)</span>
+              <span>Preprint 15 September 2026</span>
+              <span>Compiled using MNRAS LaTeX style v3.3</span>
+            </div>
+            <!-- Paper Title -->
+            <h1 class="text-[17px] font-bold tracking-tight text-neutral-900 leading-snug mb-3">
+              Non-lognormal density probability distribution and turbulent Mach numbers in the local Interstellar Medium
+              from three-dimensional data
+            </h1>
+            <!-- Authors & Affiliation -->
+            <div class="text-[9.5px] leading-relaxed mb-4 text-neutral-800 font-sans">
+              <span class="font-bold">Sasi M. Behara</span><sup class="text-neutral-600">1,2</sup>* and <span
+                class="font-bold">Amit Seta</span><sup class="text-neutral-600">1</sup>†<br />
+              <span class="italic text-neutral-600 text-[8.5px]">¹ Research School of Astronomy and Astrophysics,
+                Australian National University, Canberra, ACT 2611, Australia<br />
+                ² Department of Physics, Indian Institute of Science Education and Research, Tirupati 517619,
+                India</span>
+            </div>
+            <!-- Dates Line -->
+            <div class="text-[8.5px] font-sans text-neutral-500 mb-4">
+              Accepted XXX. Received YYY; in original form ZZZ
+            </div>
+            <!-- Abstract Box -->
+            <div
+              class="mb-5 text-[9px] leading-normal text-neutral-800 bg-neutral-100/70 p-3 rounded border-l-2 border-neutral-800">
+              <span class="font-bold font-sans tracking-wide uppercase text-[8.5px]">Abstract</span><br />
+              <!-- Active SyncTeX Highlight (Directly responsive to editor cursor on line 102) -->
+              <p class="mt-1 synctex-highlight p-1">
+                The probability distribution function (PDF) of gas density is a key tool used to study turbulence and
+                star formation in the interstellar medium (ISM), and is typically modelled as a lognormal distribution.
+                Observational studies have been limited to two-dimensional column-density maps, which fail to capture
+                the intermittency, which are key to alternative, non-lognormal models such as the Castaing-Hopkins
+                Model. We use the parsec-scale three-dimensional dust map of the local ISM (≤ 1250 pc) from Edenhofer et
+                al. (2024) to measure, for the first time the volumetric density PDF of individual molecular clouds
+                directly in 3D.
+              </p>
+              <div class="mt-2 text-[8px] font-sans text-neutral-600">
+                <span class="font-bold">Key words:</span> turbulence — ISM: clouds — stars: formation — methods:
+                statistical
+              </div>
+            </div>
+            <!-- Two Column Main Body -->
+            <div class="two-column-layout text-[8.5px] leading-[1.38] text-neutral-800 text-justify">
+              <h2 class="font-sans font-bold text-[10px] uppercase tracking-wider mb-1">1 Introduction</h2>
+              <p class="mb-2">
+                The interstellar medium (ISM) in galaxies is the space between stars and consists of thermal gas, dust,
+                radiation, turbulence, magnetic fields, and cosmic rays. The composition and evolution of the ISM play
+                an important role in star formation and galaxy evolution (Ferrière 2001). The formation of stars is due
+                to a complex interplay between gravity, turbulence, magnetic fields, and stellar feedback (Mac Low &amp;
+                Klessen 2004; Krumholz &amp; McKee 2005; Federrath &amp; Klessen 2012).
+              </p>
+              <p class="mb-2">
+                Supersonic turbulence plays a crucial role in the star formation process. On one hand, kinetic energy
+                from turbulence and gas pressure provides support against gravitational collapse. On the other hand,
+                supersonic turbulence compresses the gas into local regions of overdense gas, which can collapse under
+                self-gravity.
+              </p>
+              <h2 class="font-sans font-bold text-[10px] uppercase tracking-wider mb-1 mt-2">2 Theoretical Models</h2>
+              <p class="mb-2">
+                Turbulence in the ISM is driven by physical processes at a range of scales, from stellar jets to
+                supernova explosions at kpc scales. These drivers create density fluctuations that can be mathematically
+                parameterized by density PDFs:
+              </p>
+              <div class="py-1 text-center font-mono text-[8px] bg-neutral-100 my-1 rounded border border-neutral-200">
+                p(s) = \frac{1}{\sqrt{2\pi\sigma_s^2}} \exp\left[-\frac{(s-s_0)^2}{2\sigma_s^2}\right]
+              </div>
+              <p>
+                where s = ln(ρ/ρ₀) is the logarithmic density contrast and σₛ is related to the sonic Mach number
+                $\mathcal{M}$.
+              </p>
+            </div>
+            <!-- Page Number Pill -->
+            <div
+              class="absolute bottom-3 right-6 text-[9px] font-sans font-semibold text-neutral-400 bg-neutral-200/80 px-2 py-0.5 rounded">
+              1
+            </div>
+          </article>
+          <!-- Second Page Micro Preview (Partial) -->
+          <article
+            class="paper-sheet w-full max-w-[620px] bg-[#fbfbfd] text-neutral-900 px-10 py-6 rounded-sm opacity-60 hover:opacity-100 transition-opacity">
+            <div
+              class="flex justify-between items-center text-[8.5px] font-sans text-neutral-400 border-b border-neutral-200 pb-1 mb-3">
+              <span>2 Behara &amp; Seta</span>
+              <span>Turbulent Mach numbers in the ISM</span>
+            </div>
+            <div class="two-column-layout text-[8.5px] leading-relaxed text-neutral-800">
+              <p>We present here the comprehensive analysis of 766 clouds decomposed from the local volume...</p>
+            </div>
+          </article>
+        </div>
+      </section>
+      <!-- END: PDFPreviewPane -->
+    </main>
+    <!-- END: MainThreePaneWorkspace -->
+    <!-- BEGIN: NativeMacStatusBar (Catppuccin Crust & Clean Discreet Indicators) -->
+    <footer
+      class="h-6 bg-cat-crust border-t border-cat-surface0 px-3 flex items-center justify-between text-[11px] text-cat-subtext0 select-none z-30"
+      data-purpose="macos-status-bar">
+      <div class="flex items-center space-x-2 truncate">
+        <span class="w-1.5 h-1.5 rounded-full bg-cat-blue"></span>
+        <span class="font-mono text-cat-subtext1 hover:text-cat-text cursor-pointer truncate text-[10.5px]">
+          SyncTeX: main.tex:102 ↔ Page 1 (Abstract)
+        </span>
+      </div>
+      <div class="hidden md:flex items-center space-x-3 text-cat-overlay1 text-[10.5px]">
+        <span>83 labels</span>
+        <span class="text-cat-surface2">•</span>
+        <span>203 bib entries</span>
+        <span class="text-cat-surface2">•</span>
+        <span>13 files indexed</span>
+      </div>
+      <div class="flex items-center space-x-3 font-mono text-[10.5px]">
+        <span class="text-cat-subtext1">Ln 102, Col 1</span>
+        <span class="text-cat-surface2">•</span>
+        <span class="text-cat-overlay1">UTF-8</span>
+        <span class="text-cat-surface2">•</span>
+        <span class="text-cat-text flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-cat-green"></span>0.14s
+        </span>
+      </div>
+    </footer>
+    <!-- END: NativeMacStatusBar -->
+  </div>
+  <!-- END: NativeMacWindow -->
+</body>
+
+</html>
