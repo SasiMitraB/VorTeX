@@ -1,4 +1,5 @@
 use crate::services::synctex::SynctexForwardResult;
+use crate::icons::{icon, IconName};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -148,7 +149,7 @@ pub fn render_pdf_viewer(
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(viewer_btn("–", on_zoom_out.clone()))
+                        .child(viewer_btn(IconName::Minus, on_zoom_out.clone()))
                         .child(
                             div()
                                 .px_2()
@@ -167,12 +168,12 @@ pub fn render_pdf_viewer(
                                 })
                                 .child(format!("{}%", zoom_pct)),
                         )
-                        .child(viewer_btn("＋", on_zoom_in.clone()))
+                        .child(viewer_btn(IconName::Plus, on_zoom_in.clone()))
                         .child(
                             div().w(px(1.0)).h(px(14.0)).bg(Theme::border_subtle()).mx_1()
                         )
-                        .child(viewer_btn("↻", on_reload.clone()))
-                        .child(viewer_btn("↗", on_open_external.clone())),
+                        .child(viewer_btn(IconName::RotateCw, on_reload.clone()))
+                        .child(viewer_btn(IconName::ExternalLink, on_open_external.clone())),
                 ),
         )
         .child(if has_pages {
@@ -371,9 +372,7 @@ pub fn render_pdf_viewer(
                         .flex()
                         .justify_center()
                         .items_center()
-                        .text_2xl()
-                        .text_color(Theme::accent_red())
-                        .child("📄"),
+                        .child(icon(IconName::FileText).size(px(26.0)).text_color(Theme::accent_red())),
                 )
                 .child(
                     div()
@@ -401,29 +400,33 @@ pub fn render_pdf_viewer(
                         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                             on_reload(window, cx);
                         })
-                        .child("↻ Retry Render"),
+                        .flex()
+                        .items_center()
+                        .gap_1p5()
+                        .child(icon(IconName::RotateCw).size(px(12.0)).text_color(Theme::text_inverted()))
+                        .child("Retry Render"),
                 )
                 .into_any_element()
         })
 }
 
 fn viewer_btn(
-    label: &'static str,
+    btn_icon: IconName,
     on_click: impl Fn(&mut Window, &mut App) + 'static + Clone,
 ) -> impl IntoElement {
     div()
-        .px_2()
-        .py_1()
+        .size(px(24.0))
+        .flex()
+        .items_center()
+        .justify_center()
         .bg(Theme::bg_card())
         .hover(|h| h.bg(Theme::bg_hover()))
         .border_1()
         .border_color(Theme::border_subtle())
         .rounded_md()
         .cursor_pointer()
-        .text_xs()
-        .text_color(Theme::text_primary())
         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
             on_click(window, cx);
         })
-        .child(label)
+        .child(icon(btn_icon).size(px(13.0)).text_color(Theme::text_primary()))
 }

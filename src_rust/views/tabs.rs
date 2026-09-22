@@ -1,4 +1,5 @@
 use crate::state::{PaneSide, Tab, TabType};
+use crate::icons::{file_icon, icon, IconName};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -38,15 +39,12 @@ pub fn render_tab_bar(
                     let on_sw = on_switch_tab.clone();
                     let on_cl = on_close_tab.clone();
 
-                    let (icon, icon_color) = match tab.tab_type {
-                        TabType::Text => {
-                            if tab.name.ends_with(".bib") {
-                                ("❞", Theme::accent_peach())
-                            } else {
-                                ("λ", Theme::accent_sapphire())
-                            }
-                        }
-                        TabType::Pdf => ("📄", Theme::accent_red()),
+                    let (tab_icon, icon_color) = match tab.tab_type {
+                        // Untitled buffers are LaTeX by default
+                        TabType::Text if !tab.name.contains('.') => file_icon("untitled.tex"),
+                        TabType::Text => file_icon(&tab.name),
+                        TabType::Pdf => file_icon("document.pdf"),
+                        TabType::Diff => (IconName::GitCompare, Theme::accent_blue()),
                     };
 
                     div()
@@ -72,14 +70,7 @@ pub fn render_tab_bar(
                         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                             on_sw(tab_id.clone(), pane_side, window, cx);
                         })
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_family(".AppleSystemUIFontMonospaced")
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(icon_color)
-                                .child(icon),
-                        )
+                        .child(icon(tab_icon).size(px(13.0)).text_color(icon_color))
                         .child(
                             div()
                                 .text_xs()
@@ -108,12 +99,7 @@ pub fn render_tab_bar(
                                 .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                                     on_cl(tab_id_close.clone(), pane_side, window, cx);
                                 })
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(Theme::text_dim())
-                                        .child("×"),
-                                ),
+                                .child(icon(IconName::X).size(px(12.0)).text_color(Theme::text_dim())),
                         )
                 }))
                 .child(
@@ -128,12 +114,7 @@ pub fn render_tab_bar(
                         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                             on_new(pane_side, window, cx);
                         })
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(Theme::text_dim())
-                                .child("+"),
-                        ),
+                        .child(icon(IconName::Plus).size(px(14.0)).text_color(Theme::text_dim())),
                 ),
         )
         .child(
@@ -147,12 +128,11 @@ pub fn render_tab_bar(
                 .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                     on_split(window, cx);
                 })
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(Theme::text_dim())
-                        .child("◫ Split"),
-                ),
+                .flex()
+                .items_center()
+                .gap_1p5()
+                .child(icon(IconName::Columns2).size(px(13.0)).text_color(Theme::text_dim()))
+                .child(div().text_xs().text_color(Theme::text_dim()).child("Split")),
         )
 }
 

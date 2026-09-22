@@ -1,4 +1,5 @@
 use crate::backend::ProjectItem;
+use crate::icons::{icon, IconName};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -7,14 +8,10 @@ pub fn render_project_selector(
     projects: &[ProjectItem],
     projects_folder: Option<&str>,
     scroll_handle: &ScrollHandle,
-    theme_label: &str,
     on_select_project: impl Fn(String, &mut Window, &mut App) + 'static + Clone,
     on_change_folder: impl Fn(&mut Window, &mut App) + 'static + Clone,
-    on_toggle_theme: impl Fn(&mut Window, &mut App) + 'static + Clone,
 ) -> impl IntoElement {
     let on_ch = on_change_folder.clone();
-    let on_theme = on_toggle_theme.clone();
-    let theme_label_str = theme_label.to_string();
 
     div()
         .id("project_selector_scroll")
@@ -85,30 +82,6 @@ pub fn render_project_selector(
                                 .gap_3()
                                 .child(
                                     div()
-                                        .px_3()
-                                        .py_2()
-                                        .bg(Theme::bg_card())
-                                        .hover(|h| h.bg(Theme::bg_hover()))
-                                        .border_1()
-                                        .border_color(Theme::border_subtle())
-                                        .rounded_md()
-                                        .cursor_pointer()
-                                        .flex()
-                                        .items_center()
-                                        .gap_1p5()
-                                        .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
-                                            on_theme(window, cx);
-                                        })
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .text_color(Theme::text_primary())
-                                                .child(theme_label_str),
-                                        ),
-                                )
-                                .child(
-                                    div()
                                         .px_4()
                                         .py_2()
                                         .bg(Theme::bg_card())
@@ -123,12 +96,7 @@ pub fn render_project_selector(
                                         .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                                             on_ch(window, cx);
                                         })
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .text_color(Theme::accent_blue())
-                                                .child("📁"),
-                                        )
+                                        .child(icon(IconName::FolderSearch).size(px(15.0)).text_color(Theme::accent_blue()))
                                         .child(
                                             div()
                                                 .text_xs()
@@ -179,10 +147,7 @@ pub fn render_project_selector(
                             .justify_center()
                             .gap_4()
                             .child(
-                                div()
-                                    .text_3xl()
-                                    .text_color(Theme::accent_blue())
-                                    .child("📁"),
+                                icon(IconName::FolderSearch).size(px(36.0)).text_color(Theme::accent_blue()),
                             )
                             .child(
                                 div()
@@ -231,10 +196,7 @@ pub fn render_project_selector(
                             .justify_center()
                             .gap_4()
                             .child(
-                                div()
-                                    .text_2xl()
-                                    .text_color(Theme::text_dim())
-                                    .child("📁"),
+                                icon(IconName::Folder).size(px(30.0)).text_color(Theme::text_dim()),
                             )
                             .child(
                                 div()
@@ -348,9 +310,11 @@ pub fn render_project_selector(
                                                         .flex()
                                                         .items_center()
                                                         .justify_center()
-                                                        .text_2xl()
-                                                        .text_color(if has_pdf { Theme::accent_red() } else { Theme::accent_blue() })
-                                                        .child(if has_pdf { "📄" } else { "λ" }),
+                                                        .child(
+                                                            icon(if has_pdf { IconName::FileText } else { IconName::FileCode })
+                                                                .size(px(22.0))
+                                                                .text_color(if has_pdf { Theme::accent_red() } else { Theme::accent_blue() }),
+                                                        ),
                                                 )
                                                 .child(
                                                     div()
@@ -382,9 +346,17 @@ pub fn render_project_selector(
                                                     )
                                                     .child(
                                                         div()
+                                                            .flex()
+                                                            .items_center()
+                                                            .gap_1()
                                                             .text_xs()
                                                             .text_color(if has_pdf { Theme::accent_green() } else { Theme::text_dim() })
-                                                            .child(if has_pdf { "● PDF" } else { "● Tex" }),
+                                                            .child(
+                                                                icon(if has_pdf { IconName::CircleCheck } else { IconName::FileCode })
+                                                                    .size(px(12.0))
+                                                                    .text_color(if has_pdf { Theme::accent_green() } else { Theme::text_dim() }),
+                                                            )
+                                                            .child(if has_pdf { "PDF" } else { "TeX" }),
                                                     ),
                                             )
                                             .child(

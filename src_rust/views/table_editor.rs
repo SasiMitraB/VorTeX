@@ -3,6 +3,7 @@
 use crate::services::table_parser::{
     generate_latex_table, parse_latex_table, ColAlign, TableModel,
 };
+use crate::icons::{icon, IconName};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -286,10 +287,7 @@ pub fn render_table_editor_modal(
                                 .items_center()
                                 .gap_2()
                                 .child(
-                                    div()
-                                        .text_base()
-                                        .text_color(Theme::accent_blue())
-                                        .child("📊"),
+                                    icon(IconName::Table2).size(px(16.0)).text_color(Theme::accent_blue()),
                                 )
                                 .child(
                                     div()
@@ -301,13 +299,17 @@ pub fn render_table_editor_modal(
                         )
                         .child(
                             div()
+                                .size(px(24.0))
+                                .rounded_md()
+                                .flex()
+                                .items_center()
+                                .justify_center()
                                 .cursor_pointer()
-                                .text_color(Theme::text_muted())
-                                .hover(|h| h.text_color(Theme::text_bright()))
+                                .hover(|h| h.bg(Theme::bg_hover()))
                                 .on_mouse_down(MouseButton::Left, move |_ev, window, cx| {
                                     on_cls1(window, cx);
                                 })
-                                .child("✕"),
+                                .child(icon(IconName::X).size(px(14.0)).text_color(Theme::text_muted())),
                         ),
                 )
                 // ==========================================
@@ -429,7 +431,9 @@ pub fn render_table_editor_modal(
                                                 .flex()
                                                 .items_center()
                                                 .justify_center()
-                                                .child(if sheet.model.booktabs { "✓" } else { "" }),
+                                                .when(sheet.model.booktabs, |d| {
+                                                    d.child(icon(IconName::Check).size(px(10.0)).text_color(Theme::text_inverted()))
+                                                }),
                                         )
                                         .child(
                                             div()

@@ -1,4 +1,5 @@
 use crate::services::fs_utils::get_or_create_pdf_thumbnail;
+use crate::icons::{icon, IconName};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -72,9 +73,7 @@ pub fn render_pdf_preview(
                                     .flex()
                                     .justify_center()
                                     .items_center()
-                                    .text_2xl()
-                                    .text_color(Theme::accent_red())
-                                    .child("📄"),
+                                    .child(icon(IconName::FileText).size(px(26.0)).text_color(Theme::accent_red())),
                             )
                     }
                 )

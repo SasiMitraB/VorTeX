@@ -1,3 +1,4 @@
+use crate::icons::{icon, IconName};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -190,13 +191,13 @@ pub fn render_completion_popup(
                     let item_clone = item.clone();
                     let on_sel = on_select.clone();
 
-                    let (icon, icon_color) = match item.kind {
-                        CompletionKind::Reference => ("⚑", Theme::accent_blue()),
-                        CompletionKind::Citation => ("❝", Theme::accent_purple()),
-                        CompletionKind::Environment => ("⚡", Theme::accent_yellow()),
-                        CompletionKind::Command => ("λ", Theme::accent_cyan()),
-                        CompletionKind::File => ("📄", Theme::text_dim()),
-                        CompletionKind::Snippet => ("✦", Theme::accent_orange()),
+                    let (kind_icon, icon_color) = match item.kind {
+                        CompletionKind::Reference => (IconName::Link, Theme::accent_blue()),
+                        CompletionKind::Citation => (IconName::Quote, Theme::accent_purple()),
+                        CompletionKind::Environment => (IconName::Layers, Theme::accent_yellow()),
+                        CompletionKind::Command => (IconName::Code, Theme::accent_cyan()),
+                        CompletionKind::File => (IconName::File, Theme::text_dim()),
+                        CompletionKind::Snippet => (IconName::Sparkles, Theme::accent_orange()),
                     };
 
                     div()
@@ -217,12 +218,7 @@ pub fn render_completion_popup(
                                 .flex()
                                 .items_center()
                                 .gap_2()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(icon_color)
-                                        .child(icon),
-                                )
+                                .child(icon(kind_icon).size(px(13.0)).text_color(icon_color))
                                 .child(
                                     div()
                                         .text_xs()

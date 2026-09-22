@@ -1,3 +1,4 @@
+pub mod diff_view;
 pub mod editor;
 pub mod pdf_preview;
 pub mod pdf_viewer;

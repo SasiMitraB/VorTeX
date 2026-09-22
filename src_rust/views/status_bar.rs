@@ -1,4 +1,5 @@
 use crate::backend::IndexStats;
+use crate::icons::{icon, IconName};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -54,17 +55,11 @@ pub fn render_status_bar(
             div()
                 .flex()
                 .items_center()
-                .gap_2()
+                .gap_3()
                 .text_color(Theme::text_dim())
-                .child(format!("{} labels", stats.labels))
-                .child(
-                    div().text_color(Theme::border_subtle()).child("•")
-                )
-                .child(format!("{} bib entries", stats.bibentries))
-                .child(
-                    div().text_color(Theme::border_subtle()).child("•")
-                )
-                .child(format!("{} files indexed", stats.files_indexed)),
+                .child(status_stat(IconName::Tag, format!("{} labels", stats.labels)))
+                .child(status_stat(IconName::BookMarked, format!("{} bib entries", stats.bibentries)))
+                .child(status_stat(IconName::Files, format!("{} files indexed", stats.files_indexed))),
         )
         .child(
             // Right cluster: Cursor Ln/Col, UTF-8, Build Ready
@@ -112,3 +107,11 @@ pub fn render_status_bar(
         )
 }
 
+fn status_stat(stat_icon: IconName, text: String) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .child(icon(stat_icon).size(px(11.0)).text_color(Theme::text_dim()))
+        .child(text)
+}
