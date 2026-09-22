@@ -1,0 +1,28 @@
+[package]
+name = "vortex-app"
+description = "VorTeX desktop app: Tauri command and event layer over vortex-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "vortex_app"
+
+[[bin]]
+name = "vortex"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+vortex-core = { path = "../crates/vortex-core", features = ["specta"] }
+tauri = { version = "2.11", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2.7"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta.workspace = true
+specta-typescript = "0.0.12"
+serde.workspace = true
+serde_json.workspace = true
+open = "5.3"
+trash = "5"

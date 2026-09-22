@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-table-apply"
+description = "Enables the table_apply command without any pre-configured scope."
+commands.allow = ["table_apply"]
+
+[[permission]]
+identifier = "deny-table-apply"
+description = "Denies the table_apply command without any pre-configured scope."
+commands.deny = ["table_apply"]

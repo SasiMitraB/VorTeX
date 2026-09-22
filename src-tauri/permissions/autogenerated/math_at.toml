@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-math-at"
+description = "Enables the math_at command without any pre-configured scope."
+commands.allow = ["math_at"]
+
+[[permission]]
+identifier = "deny-math-at"
+description = "Denies the math_at command without any pre-configured scope."
+commands.deny = ["math_at"]

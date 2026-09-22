@@ -1,0 +1,29 @@
+[package]
+name = "vortex-core"
+description = "VorTeX editor services: indexing, building, SyncTeX, git, grammar, math preview. No UI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Derives `specta::Type` on API types so the Tauri app can export them to TypeScript.
+specta = ["dep:specta"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+specta = { workspace = true, optional = true }
+dirs = "5.0"
+regex = "1.10"
+fuzzy-matcher = "0.3"
+notify = "6.1"
+notify-debouncer-mini = "0.4"
+walkdir = "2.5"
+chrono = "0.4"
+mupdf = "0.8"
+harper-core = "2"
+similar = { version = "2", features = ["inline"] }
+
+[dev-dependencies]
+tempfile = "3.10"

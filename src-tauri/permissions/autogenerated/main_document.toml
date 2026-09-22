@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-main-document"
+description = "Enables the main_document command without any pre-configured scope."
+commands.allow = ["main_document"]
+
+[[permission]]
+identifier = "deny-main-document"
+description = "Denies the main_document command without any pre-configured scope."
+commands.deny = ["main_document"]

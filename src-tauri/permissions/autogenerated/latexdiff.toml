@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-latexdiff"
+description = "Enables the latexdiff command without any pre-configured scope."
+commands.allow = ["latexdiff"]
+
+[[permission]]
+identifier = "deny-latexdiff"
+description = "Denies the latexdiff command without any pre-configured scope."
+commands.deny = ["latexdiff"]

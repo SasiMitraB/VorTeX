@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-git-line-markers"
+description = "Enables the git_line_markers command without any pre-configured scope."
+commands.allow = ["git_line_markers"]
+
+[[permission]]
+identifier = "deny-git-line-markers"
+description = "Denies the git_line_markers command without any pre-configured scope."
+commands.deny = ["git_line_markers"]

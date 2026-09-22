@@ -1,0 +1,17 @@
+{
+  "name": "vortex",
+  "private": true,
+  "version": "0.2.0",
+  "workspaces": ["ui"],
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri",
+    "typecheck": "npm run typecheck -w ui",
+    "bindings": "cargo test -p vortex-app --lib export_bindings_to_ui",
+    "check:offline": "sh scripts/check-offline.sh"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5"
+  }
+}

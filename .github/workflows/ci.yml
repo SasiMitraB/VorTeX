@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # TeX-dependent tests skip themselves when latexmk/synctex/latexdiff are missing.
+      - name: Rust tests
+        run: cargo test --workspace --locked
+
+      - name: TypeScript bindings are up to date
+        run: git diff --exit-code -- ui/src/bindings.ts || (echo "Run 'npm run bindings' and commit ui/src/bindings.ts" && exit 1)
+
+      - name: Offline guarantee
+        run: sh scripts/check-offline.sh
+
+      - name: Typecheck and build the frontend
+        run: npm run build -w ui

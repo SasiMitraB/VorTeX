@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-synctex-forward"
+description = "Enables the synctex_forward command without any pre-configured scope."
+commands.allow = ["synctex_forward"]
+
+[[permission]]
+identifier = "deny-synctex-forward"
+description = "Denies the synctex_forward command without any pre-configured scope."
+commands.deny = ["synctex_forward"]

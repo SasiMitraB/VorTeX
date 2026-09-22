@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-math-render"
+description = "Enables the math_render command without any pre-configured scope."
+commands.allow = ["math_render"]
+
+[[permission]]
+identifier = "deny-math-render"
+description = "Denies the math_render command without any pre-configured scope."
+commands.deny = ["math_render"]
