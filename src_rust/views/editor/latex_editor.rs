@@ -1,7 +1,11 @@
 #![allow(dead_code)]
 
+use crate::actions::{self, EDITOR_CONTEXT};
 use crate::backend::BackendClient;
+use crate::icons::{icon, IconName};
+use crate::services::git::{self, GutterMarkers, LineChange};
 use crate::services::grammar_checker::{run_grammar_check, GrammarDiagnostic};
+use crate::services::math_preview::{self, MathRenderRequest, MathSpan, RenderedMath};
 use crate::theme::Theme;
 use crate::views::editor::completion::{render_completion_popup, CompletionItem, CompletionKind, CompletionState};
 use gpui::prelude::*;
@@ -48,6 +52,27 @@ pub const GUTTER_WIDTH: f32 = 48.0;
 pub const TEXT_PADDING_LEFT: f32 = 12.0;
 pub const EDITOR_HEADER_HEIGHT: f32 = 112.0; // 46.0 (app toolbar) + 34.0 (tab bar) + 24.0 (breadcrumb) + 8.0 (py_2 padding top)
 
+/// How long the pointer must rest on math before its preview appears.
+const MATH_HOVER_DELAY: std::time::Duration = std::time::Duration::from_millis(350);
+/// On-screen pixels per TeX point in the math preview (10pt text ≈ 14.5px).
+const MATH_PREVIEW_SCALE: f32 = 1.45;
+
+#[derive(Clone)]
+pub enum MathPreview {
+    Rendering,
+    Ready(RenderedMath),
+    Failed(String),
+}
+
+pub struct MathHover {
+    pub span: MathSpan,
+    /// Cache key: text color + snippet source.
+    key: String,
+    color_hex: String,
+    /// False until the pointer has rested on the span for `MATH_HOVER_DELAY`.
+    pub visible: bool,
+}
+
 pub struct LatexEditor {
     pub focus_handle: FocusHandle,
     pub lines: Vec<String>,
@@ -78,6 +103,18 @@ pub struct LatexEditor {
     pub grammar_check_pending: bool,
     /// Pending/running grammar check task (dropped/cancelled when new edits arrive)
     pub grammar_check_task: Option<Task<()>>,
+    /// Math region under the pointer (equation hover preview)
+    pub math_hover: Option<MathHover>,
+    math_hover_task: Option<Task<()>>,
+    /// Rendered previews keyed by `MathHover::key`
+    math_previews: std::collections::HashMap<String, MathPreview>,
+    /// Committed (HEAD) version of the current file, for the git change gutter
+    git_base: Option<String>,
+    /// File that `git_base` was loaded for (`None` = needs (re)loading)
+    git_base_path: Option<Option<String>>,
+    pub git_markers: GutterMarkers,
+    git_markers_dirty: bool,
+    git_gutter_task: Option<Task<()>>,
 }
 
 impl LatexEditor {
@@ -114,6 +151,14 @@ impl LatexEditor {
             hovered_diagnostic: None,
             grammar_check_pending: false,
             grammar_check_task: None,
+            math_hover: None,
+            math_hover_task: None,
+            math_previews: std::collections::HashMap::new(),
+            git_base: None,
+            git_base_path: None,
+            git_markers: GutterMarkers::default(),
+            git_markers_dirty: false,
+            git_gutter_task: None,
         }
     }
 
@@ -138,12 +183,85 @@ impl LatexEditor {
         self.hovered_diagnostic = None;
         self.grammar_check_pending = false;
         self.grammar_check_task = None;
+        self.math_hover = None;
+        self.math_hover_task = None;
+        // Previews depend on the file's macros, so start fresh for a new file
+        self.math_previews.clear();
+        self.git_markers = GutterMarkers::default();
+        self.git_markers_dirty = true;
+    }
+
+    /// Forces the committed version to be re-read (e.g. after a commit or checkout).
+    pub fn invalidate_git_base(&mut self) {
+        self.git_base_path = None;
+    }
+
+    /// Loads the HEAD version of the current file in the background, then refreshes markers.
+    fn load_git_base(&mut self, cx: &mut Context<Self>) {
+        let path = self.current_file_path.clone();
+        self.git_base_path = Some(path.clone());
+        self.git_base = None;
+        self.git_markers = GutterMarkers::default();
+        let Some(path) = path else {
+            return;
+        };
+        cx.spawn(|this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                let base = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let path = std::path::Path::new(&path);
+                        let root = git::repo_root(path)?;
+                        let rel = git::relative_path(&root, path)?;
+                        git::as_text(&git::file_at_revision(&root, "HEAD", &rel)?)
+                    })
+                    .await;
+                let _ = this.update(&mut cx, |editor, cx| {
+                    editor.git_base = base;
+                    editor.schedule_git_gutter(cx);
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Recomputes the added/modified/removed gutter markers shortly after edits.
+    pub fn schedule_git_gutter(&mut self, cx: &mut Context<Self>) {
+        self.git_markers_dirty = false;
+        let Some(base) = self.git_base.clone() else {
+            self.git_gutter_task = None;
+            if !self.git_markers.lines.is_empty() {
+                self.git_markers = GutterMarkers::default();
+                cx.notify();
+            }
+            return;
+        };
+        self.git_gutter_task = Some(cx.spawn(|this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                cx.background_executor().timer(std::time::Duration::from_millis(200)).await;
+                let Ok(content) = this.read_with(&cx, |editor, _| editor.get_content()) else {
+                    return;
+                };
+                let markers = cx
+                    .background_executor()
+                    .spawn(async move { git::gutter_markers(&base, &content) })
+                    .await;
+                let _ = this.update(&mut cx, |editor, cx| {
+                    editor.git_markers = markers;
+                    cx.notify();
+                });
+            }
+        }));
     }
 
     /// Schedule a debounced grammar check. Called after every edit.
     /// Runs the debounce timer on the foreground executor, then offloads heavy
     /// BibTeX fetching and Harper linting entirely to the background thread pool.
     pub fn schedule_grammar_check(&mut self, cx: &mut Context<Self>) {
+        // Every edit path calls this, so it also drives the git change gutter.
+        self.schedule_git_gutter(cx);
         self.grammar_check_pending = true;
         let backend = self.backend.clone();
 
@@ -180,6 +298,91 @@ impl LatexEditor {
                 });
             }
         }));
+    }
+
+    /// Updates the equation preview for the buffer position under the pointer.
+    pub fn update_math_hover(&mut self, pos: Option<(usize, usize)>, cx: &mut Context<Self>) {
+        let span = pos.and_then(|(row, col)| {
+            let spans = math_preview::find_math_spans(&self.lines);
+            math_preview::math_span_at(&spans, row, col).cloned()
+        });
+        if self.math_hover.as_ref().map(|h| &h.span) == span.as_ref() {
+            return;
+        }
+        let Some(span) = span else {
+            self.hide_math_hover(cx);
+            return;
+        };
+
+        let color = Theme::text_bright().to_rgb();
+        let to_byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        let color_hex = format!("{:02X}{:02X}{:02X}", to_byte(color.r), to_byte(color.g), to_byte(color.b));
+        let key = format!("{color_hex}|{}", span.snippet());
+        let was_visible = self.math_hover.as_ref().is_some_and(|h| h.visible);
+        self.math_hover = Some(MathHover { span, key, color_hex, visible: false });
+        if was_visible {
+            cx.notify();
+        }
+
+        self.math_hover_task = Some(cx.spawn(|this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                cx.background_executor().timer(MATH_HOVER_DELAY).await;
+                let _ = this.update(&mut cx, |editor, cx| {
+                    if let Some(hover) = editor.math_hover.as_mut() {
+                        hover.visible = true;
+                        editor.ensure_math_rendered(cx);
+                        cx.notify();
+                    }
+                });
+            }
+        }));
+    }
+
+    pub fn hide_math_hover(&mut self, cx: &mut Context<Self>) {
+        self.math_hover_task = None;
+        if self.math_hover.take().is_some_and(|h| h.visible) {
+            cx.notify();
+        }
+    }
+
+    /// Starts a background render of the hovered math unless it is cached or in flight.
+    /// The render is detached so it still fills the cache if the pointer moves away.
+    fn ensure_math_rendered(&mut self, cx: &mut Context<Self>) {
+        let Some(hover) = self.math_hover.as_ref() else {
+            return;
+        };
+        if self.math_previews.contains_key(&hover.key) {
+            return;
+        }
+        let key = hover.key.clone();
+        let request_snippet = hover.span.snippet();
+        let color_hex = hover.color_hex.clone();
+        let content = self.get_content();
+        let file_path = self.current_file_path.clone();
+        self.math_previews.insert(key.clone(), MathPreview::Rendering);
+
+        cx.spawn(|this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let preamble = math_preview::build_preamble(&content, file_path.as_deref());
+                        math_preview::render_math(&MathRenderRequest { snippet: request_snippet, preamble, color_hex })
+                    })
+                    .await;
+                let _ = this.update(&mut cx, |editor, cx| {
+                    let preview = match result {
+                        Ok(rendered) => MathPreview::Ready(rendered),
+                        Err(msg) => MathPreview::Failed(msg),
+                    };
+                    editor.math_previews.insert(key, preview);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     pub fn get_content(&self) -> String {
@@ -1751,6 +1954,171 @@ impl LatexEditor {
     }
 }
 
+impl LatexEditor {
+    fn action_undo(&mut self, _: &actions::Undo, _window: &mut Window, cx: &mut Context<Self>) {
+        self.undo();
+        self.schedule_grammar_check(cx);
+        cx.notify();
+    }
+
+    fn action_redo(&mut self, _: &actions::Redo, _window: &mut Window, cx: &mut Context<Self>) {
+        self.redo();
+        self.schedule_grammar_check(cx);
+        cx.notify();
+    }
+
+    /// Copies the selection, or the whole current line when nothing is selected.
+    fn action_copy(&mut self, _: &actions::Copy, _window: &mut Window, cx: &mut Context<Self>) {
+        let text = self
+            .get_selected_text()
+            .unwrap_or_else(|| format!("{}\n", self.current_line()));
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        cx.notify();
+    }
+
+    /// Cuts the selection, or the whole current line when nothing is selected.
+    fn action_cut(&mut self, _: &actions::Cut, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = self.get_selected_text() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+            self.delete_selection();
+        } else {
+            let line = format!("{}\n", self.current_line());
+            cx.write_to_clipboard(ClipboardItem::new_string(line));
+            self.push_undo();
+            if self.lines.len() > 1 {
+                self.lines.remove(self.cursor_row);
+                if self.cursor_row >= self.lines.len() {
+                    self.cursor_row = self.lines.len() - 1;
+                }
+            } else {
+                self.lines[0].clear();
+            }
+            self.cursor_col = 0;
+        }
+        self.schedule_grammar_check(cx);
+        cx.notify();
+    }
+
+    fn action_paste(&mut self, _: &actions::Paste, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+            self.paste_text(&text);
+        }
+        self.schedule_grammar_check(cx);
+        cx.notify();
+    }
+
+    fn action_select_all(&mut self, _: &actions::SelectAll, _window: &mut Window, cx: &mut Context<Self>) {
+        self.select_all();
+        cx.notify();
+    }
+
+    fn action_toggle_comment(&mut self, _: &actions::ToggleComment, _window: &mut Window, cx: &mut Context<Self>) {
+        self.toggle_comment();
+        self.schedule_grammar_check(cx);
+        cx.notify();
+    }
+}
+
+impl LatexEditor {
+    /// Floating preview card for the hovered math, positioned below the span
+    /// (or above it when there is no room), in text-area coordinates.
+    fn render_math_popup(&self, visual_lines: &[VisualLine], window: &Window) -> Option<AnyElement> {
+        let hover = self.math_hover.as_ref().filter(|h| h.visible)?;
+        let preview = self.math_previews.get(&hover.key).cloned().unwrap_or(MathPreview::Rendering);
+
+        let win = window.viewport_size();
+        let sidebar_w = if self.sidebar_visible { SIDEBAR_WIDTH } else { 0.0 };
+        let pane_w = (f32::from(win.width) - sidebar_w).max(200.0) / if self.has_right_pane { 2.0 } else { 1.0 };
+        // Text area = window minus toolbar/tab bar/breadcrumb above and the status bar below
+        let area_h = f32::from(win.height) - (EDITOR_HEADER_HEIGHT - 8.0) - 25.0;
+
+        const PAD: f32 = 12.0;
+        const HEADER_H: f32 = 24.0;
+        let max_img_w = (pane_w - GUTTER_WIDTH - 48.0).clamp(120.0, 720.0);
+        let (body, body_w, body_h): (AnyElement, f32, f32) = match preview {
+            MathPreview::Ready(r) => {
+                let mut w = r.width_pt * MATH_PREVIEW_SCALE;
+                let mut h = r.height_pt * MATH_PREVIEW_SCALE;
+                if w > max_img_w {
+                    h *= max_img_w / w;
+                    w = max_img_w;
+                }
+                (img(r.png_path.clone()).w(px(w)).h(px(h)).into_any_element(), w, h)
+            }
+            MathPreview::Rendering => (
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1p5()
+                    .text_xs()
+                    .text_color(Theme::text_muted())
+                    .child(icon(IconName::LoaderCircle).size(px(12.0)).text_color(Theme::text_muted()))
+                    .child("Rendering…")
+                    .into_any_element(),
+                110.0,
+                16.0,
+            ),
+            MathPreview::Failed(msg) => (
+                div()
+                    .max_w(px(380.0))
+                    .text_xs()
+                    .text_color(Theme::accent_red())
+                    .child(msg)
+                    .into_any_element(),
+                380.0,
+                32.0,
+            ),
+        };
+        let popup_w = (body_w + 2.0 * PAD).max(150.0);
+        let popup_h = body_h + 2.0 * PAD + HEADER_H;
+
+        // Vertical placement relative to the span's first/last visual lines (py_2 = 8px top padding)
+        let (start_row, start_col) = hover.span.start;
+        let (end_row, end_col) = hover.span.end;
+        let v_start = Self::find_visual_line_index(visual_lines, start_row, start_col);
+        let v_end = Self::find_visual_line_index(visual_lines, end_row, end_col);
+        let line_top = |v: usize| v as f32 * LINE_HEIGHT - self.scroll_top_px + 8.0;
+        let below = line_top(v_end) + LINE_HEIGHT + 6.0;
+        let above = line_top(v_start) - popup_h - 6.0;
+        let top = if below + popup_h <= area_h - 8.0 || above < 4.0 { below } else { above };
+
+        let col_in_seg = start_col.saturating_sub(visual_lines[v_start].start_col);
+        let left = (GUTTER_WIDTH + TEXT_PADDING_LEFT + col_in_seg as f32 * CHAR_WIDTH)
+            .min(pane_w - popup_w - 12.0)
+            .max(8.0);
+
+        Some(
+            div()
+                .absolute()
+                .top(px(top))
+                .left(px(left))
+                .min_w(px(popup_w))
+                .bg(Theme::completion_popup_bg())
+                .border_1()
+                .border_color(Theme::border_subtle())
+                .rounded_lg()
+                .shadow_lg()
+                .overflow_hidden()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .h(px(HEADER_H))
+                        .px_2p5()
+                        .flex()
+                        .items_center()
+                        .gap_1p5()
+                        .border_b_1()
+                        .border_color(Theme::border_subtle())
+                        .child(icon(IconName::Sigma).size(px(11.0)).text_color(Theme::accent_mauve()))
+                        .child(div().text_xs().text_color(Theme::text_dim()).child(hover.span.label())),
+                )
+                .child(div().p(px(PAD)).flex().justify_center().child(body))
+                .into_any_element(),
+        )
+    }
+}
+
 impl Render for LatexEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let win_w = f32::from(window.viewport_size().width);
@@ -1778,6 +2146,15 @@ impl Render for LatexEditor {
         let start_v_row = first_visible_v_row.min(total_v_lines.saturating_sub(1));
         let end_v_row = (first_visible_v_row + 55).min(total_v_lines);
 
+        let math_popup = self.render_math_popup(&visual_lines, window);
+
+        if self.git_base_path.as_ref() != Some(&self.current_file_path) {
+            self.load_git_base(cx);
+        } else if self.git_markers_dirty {
+            self.schedule_git_gutter(cx);
+        }
+        let git_markers = self.git_markers.clone();
+
         let completion_open = self.completion.is_open;
         let completion_state = self.completion.clone();
         let view_handle = cx.entity().clone();
@@ -1794,7 +2171,21 @@ impl Render for LatexEditor {
         let grammar_diags = self.grammar_diagnostics.clone();
         let hovered_diag = self.hovered_diagnostic;
         div()
+            .id("latex_editor")
             .track_focus(&self.focus_handle)
+            .key_context(EDITOR_CONTEXT)
+            .on_hover(cx.listener(|this, hovered: &bool, _window, cx| {
+                if !*hovered {
+                    this.hide_math_hover(cx);
+                }
+            }))
+            .on_action(cx.listener(Self::action_undo))
+            .on_action(cx.listener(Self::action_redo))
+            .on_action(cx.listener(Self::action_cut))
+            .on_action(cx.listener(Self::action_copy))
+            .on_action(cx.listener(Self::action_paste))
+            .on_action(cx.listener(Self::action_select_all))
+            .on_action(cx.listener(Self::action_toggle_comment))
             .size_full()
             .bg(Theme::bg_editor())
             .flex()
@@ -1842,6 +2233,7 @@ impl Render for LatexEditor {
             )
             .on_mouse_down(MouseButton::Left, cx.listener(|this, event: &MouseDownEvent, window, cx| {
                 window.focus(&this.focus_handle);
+                this.hide_math_hover(cx);
                 let mouse_x = f32::from(event.position.x);
                 let mouse_y = f32::from(event.position.y);
                 let sidebar_w = if this.sidebar_visible { SIDEBAR_WIDTH } else { 0.0 };
@@ -1888,9 +2280,6 @@ impl Render for LatexEditor {
             }))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, cx| {
                 let is_dragging = this.is_mouse_dragging && event.pressed_button == Some(MouseButton::Left);
-                if !is_dragging && this.grammar_diagnostics.is_empty() {
-                    return;
-                }
 
                 let mouse_x = f32::from(event.position.x);
                 let mouse_y = f32::from(event.position.y);
@@ -1907,6 +2296,7 @@ impl Render for LatexEditor {
                         this.hovered_diagnostic = None;
                         cx.notify();
                     }
+                    this.hide_math_hover(cx);
                     return;
                 }
 
@@ -1925,6 +2315,16 @@ impl Render for LatexEditor {
                 let hover_col_in_seg = (((mouse_x - t_start_x) / CHAR_WIDTH).max(0.0).round() as usize).min(seg_len);
                 let hover_row = vl.buffer_row;
                 let hover_col = vl.start_col + hover_col_in_seg;
+
+                // Equation preview: only when the pointer is over an actual character
+                if is_dragging {
+                    this.hide_math_hover(cx);
+                } else {
+                    let char_offset = (mouse_x - t_start_x) / CHAR_WIDTH;
+                    let over_char = char_offset >= 0.0 && (char_offset as usize) < seg_len;
+                    let pos = over_char.then(|| (hover_row, vl.start_col + char_offset as usize));
+                    this.update_math_hover(pos, cx);
+                }
 
                 // Update grammar diagnostic hover state
                 if !this.grammar_diagnostics.is_empty() {
@@ -1966,6 +2366,7 @@ impl Render for LatexEditor {
 
                 this.scroll_top_px = (this.scroll_top_px - delta_y).clamp(0.0, max_scroll);
                 this.completion.close();
+                this.hide_math_hover(cx);
                 cx.notify();
             }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
@@ -1976,6 +2377,7 @@ impl Render for LatexEditor {
                 let is_platform = event.keystroke.modifiers.platform; // Cmd on macOS, Super/Win on Linux/Windows
                 let is_cmd_or_ctrl = is_platform || is_ctrl;
                 let is_macos = cfg!(target_os = "macos");
+                this.hide_math_hover(cx);
 
                 // 1. Completion popup navigation
                 if this.completion.is_open {
@@ -2010,58 +2412,27 @@ impl Render for LatexEditor {
                 if is_cmd_or_ctrl && !is_alt {
                     match key {
                         "a" => {
-                            this.select_all();
-                            cx.notify();
+                            this.action_select_all(&actions::SelectAll, window, cx);
                             return;
                         }
                         "c" => {
-                            if let Some(text) = this.get_selected_text() {
-                                cx.write_to_clipboard(ClipboardItem::new_string(text));
-                            } else {
-                                let line = format!("{}\n", this.current_line());
-                                cx.write_to_clipboard(ClipboardItem::new_string(line));
-                            }
-                            cx.notify();
+                            this.action_copy(&actions::Copy, window, cx);
                             return;
                         }
                         "x" => {
-                            if let Some(text) = this.get_selected_text() {
-                                cx.write_to_clipboard(ClipboardItem::new_string(text));
-                                this.delete_selection();
-                            } else {
-                                let line = format!("{}\n", this.current_line());
-                                cx.write_to_clipboard(ClipboardItem::new_string(line));
-                                this.push_undo();
-                                if this.lines.len() > 1 {
-                                    this.lines.remove(this.cursor_row);
-                                    if this.cursor_row >= this.lines.len() {
-                                        this.cursor_row = this.lines.len() - 1;
-                                    }
-                                } else {
-                                    this.lines[0].clear();
-                                }
-                                this.cursor_col = 0;
-                            }
-                            this.schedule_grammar_check(cx);
-                            cx.notify();
+                            this.action_cut(&actions::Cut, window, cx);
                             return;
                         }
                         "v" => {
-                            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                                this.paste_text(&text);
-                            }
-                            this.schedule_grammar_check(cx);
-                            cx.notify();
+                            this.action_paste(&actions::Paste, window, cx);
                             return;
                         }
                         "z" => {
                             if is_shift {
-                                this.redo();
+                                this.action_redo(&actions::Redo, window, cx);
                             } else {
-                                this.undo();
+                                this.action_undo(&actions::Undo, window, cx);
                             }
-                            this.schedule_grammar_check(cx);
-                            cx.notify();
                             return;
                         }
                         "y" => {
@@ -2071,9 +2442,7 @@ impl Render for LatexEditor {
                             return;
                         }
                         "/" => {
-                            this.toggle_comment();
-                            this.schedule_grammar_check(cx);
-                            cx.notify();
+                            this.action_toggle_comment(&actions::ToggleComment, window, cx);
                             return;
                         }
                         "d" => {
@@ -2279,8 +2648,16 @@ impl Render for LatexEditor {
                                         } else {
                                             String::new()
                                         };
+                                        let row = vl.buffer_row;
+                                        let change = git_markers.lines.get(row).copied().flatten();
+                                        let is_last_segment = visual_lines
+                                            .get(v_idx + 1)
+                                            .is_none_or(|next| next.buffer_row != row);
+                                        let removed_below = is_last_segment && git_markers.removed_after.contains(&Some(row));
+                                        let removed_above = row == 0 && vl.wrap_idx == 0 && git_markers.removed_after.contains(&None);
                                         div()
                                             .h(px(LINE_HEIGHT))
+                                            .relative()
                                             .px_2()
                                             .flex()
                                             .justify_end()
@@ -2289,6 +2666,32 @@ impl Render for LatexEditor {
                                             .font_family(".AppleSystemUIFontMonospaced")
                                             .text_color(if is_active { Theme::line_num_active() } else { Theme::line_num_inactive() })
                                             .font_weight(if is_active { FontWeight::BOLD } else { FontWeight::NORMAL })
+                                            // Git change bar: green = added, blue = modified
+                                            .when_some(change, |d, change| {
+                                                d.child(
+                                                    div()
+                                                        .absolute()
+                                                        .left_0()
+                                                        .top_0()
+                                                        .bottom_0()
+                                                        .w(px(3.0))
+                                                        .bg(match change {
+                                                            LineChange::Added => Theme::accent_green(),
+                                                            LineChange::Modified => Theme::accent_blue(),
+                                                        }),
+                                                )
+                                            })
+                                            // Red notch on the boundary where lines were deleted
+                                            .when(removed_below || removed_above, |d| {
+                                                let notch = div()
+                                                    .absolute()
+                                                    .left_0()
+                                                    .w(px(8.0))
+                                                    .h(px(4.0))
+                                                    .rounded_r_sm()
+                                                    .bg(Theme::accent_red());
+                                                d.child(if removed_below { notch.bottom(px(-2.0)) } else { notch.top(px(-2.0)) })
+                                            })
                                             .child(line_num_str)
                                     })),
                             )
@@ -2465,6 +2868,7 @@ impl Render for LatexEditor {
 
                             ),
                     )
+                    .children(math_popup)
                     .when(completion_open, move |d| {
                         let view = view_handle.clone();
                         d.child(render_completion_popup(
