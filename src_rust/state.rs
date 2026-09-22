@@ -141,6 +141,28 @@ pub struct DiffViewState {
     pub scroll_handle: gpui::ScrollHandle,
 }
 
+/// "Compare versions" dialog: pick two commits, get a latexdiff PDF.
+#[derive(Debug, Clone, Default)]
+pub struct LatexDiffDialog {
+    pub open: bool,
+    pub loading: bool,
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Repo-relative project folder that each version is materialized from.
+    pub scope: String,
+    /// Repo-relative main document.
+    pub main_rel: Option<String>,
+    /// Project commits, newest first.
+    pub commits: Vec<crate::services::git::Commit>,
+    /// Index into `commits`.
+    pub old: Option<usize>,
+    /// Index into `commits`; `None` = working copy.
+    pub new: Option<usize>,
+    pub running: bool,
+    pub error: Option<String>,
+    pub old_scroll: gpui::ScrollHandle,
+    pub new_scroll: gpui::ScrollHandle,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PaneState {
     pub tabs: Vec<Tab>,
@@ -293,6 +315,7 @@ pub struct AppState {
     pub sidebar_todo_scroll_handle: gpui::ScrollHandle,
     pub pdf_viewers: HashMap<String, PdfViewerState>,
     pub git: GitPanelState,
+    pub latexdiff: LatexDiffDialog,
     pub diff_views: HashMap<String, DiffViewState>,
     pub pdf_dpi: u32,
     pub theme_mode: ThemeMode,
@@ -330,6 +353,7 @@ impl AppState {
             sidebar_todo_scroll_handle: gpui::ScrollHandle::new(),
             pdf_viewers: HashMap::new(),
             git: GitPanelState::default(),
+            latexdiff: LatexDiffDialog::default(),
             diff_views: HashMap::new(),
             pdf_dpi: 144,
             theme_mode: detect_system_theme(),

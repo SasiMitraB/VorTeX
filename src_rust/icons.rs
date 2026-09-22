@@ -42,6 +42,7 @@ icons! {
     ExternalLink => "external-link",
     File => "file",
     FileCode => "file-code",
+    FileDiff => "file-diff",
     FileCog => "file-cog",
     FileImage => "file-image",
     FileJson => "file-json",

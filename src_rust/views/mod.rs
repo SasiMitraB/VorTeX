@@ -1,5 +1,6 @@
 pub mod diff_view;
 pub mod editor;
+pub mod latexdiff_dialog;
 pub mod pdf_preview;
 pub mod pdf_viewer;
 pub mod project_selector;

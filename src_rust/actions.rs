@@ -28,6 +28,7 @@ actions!(
         ToggleTheme,
         Build,
         SyncPdf,
+        CompareVersions,
         Minimize,
         Zoom,
     ]
@@ -133,6 +134,8 @@ pub fn app_menus() -> Vec<Menu> {
             items: vec![
                 MenuItem::action("Build", Build),
                 MenuItem::action("Sync PDF to Cursor", SyncPdf),
+                MenuItem::separator(),
+                MenuItem::action("Compare Versions (latexdiff)…", CompareVersions),
             ],
         },
         Menu {

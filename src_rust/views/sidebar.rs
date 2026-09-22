@@ -88,6 +88,7 @@ pub fn render_sidebar(
     on_git_refresh: impl Fn(&mut Window, &mut App) + 'static + Clone,
     on_git_open_change: impl Fn(String, &mut Window, &mut App) + 'static + Clone,
     on_git_open_commit: impl Fn(Commit, &mut Window, &mut App) + 'static + Clone,
+    on_git_latexdiff: impl Fn(&mut Window, &mut App) + 'static + Clone,
 ) -> impl IntoElement {
     div()
         .h_full()
@@ -130,7 +131,7 @@ pub fn render_sidebar(
                         on_open_table,
                     )
                     .into_any_element(),
-                    SidebarTab::Git => render_git_panel(git, on_git_refresh, on_git_open_change, on_git_open_commit)
+                    SidebarTab::Git => render_git_panel(git, on_git_refresh, on_git_open_change, on_git_open_commit, on_git_latexdiff)
                         .into_any_element(),
                 }),
         )
@@ -259,6 +260,7 @@ fn render_git_panel(
     on_refresh: impl Fn(&mut Window, &mut App) + 'static + Clone,
     on_open_change: impl Fn(String, &mut Window, &mut App) + 'static + Clone,
     on_open_commit: impl Fn(Commit, &mut Window, &mut App) + 'static + Clone,
+    on_latexdiff: impl Fn(&mut Window, &mut App) + 'static + Clone,
 ) -> impl IntoElement {
     let header = div()
         .px_3()
@@ -326,6 +328,34 @@ fn render_git_panel(
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(Theme::text_bright())
                         .child(git.branch.clone().unwrap_or_else(|| "detached HEAD".to_string())),
+                )
+                .into_any_element(),
+        );
+
+        content.push(
+            div()
+                .id("git_latexdiff")
+                .mx_3()
+                .mt_2()
+                .px_2()
+                .py_1p5()
+                .rounded_md()
+                .border_1()
+                .border_color(Theme::border_subtle())
+                .flex()
+                .items_center()
+                .gap_1p5()
+                .cursor_pointer()
+                .hover(|h| h.bg(Theme::bg_hover()))
+                .on_click(move |_, window, cx| on_latexdiff(window, cx))
+                .child(icon(IconName::FileDiff).size(px(13.0)).text_color(Theme::accent_blue()))
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .text_xs()
+                        .text_color(Theme::text_primary())
+                        .child("Compare versions as PDF…"),
                 )
                 .into_any_element(),
         );

@@ -9,13 +9,14 @@ mod views;
 use backend::{BackendClient, FileChangeEvent, IndexStats};
 use gpui::prelude::*;
 use gpui::*;
-use services::git;
+use services::{git, latexdiff};
 use state::{AppState, DiffSpec, DiffViewState, PaneSide, SidebarTab, TabType, ViewMode};
 use std::sync::mpsc;
 use std::sync::Arc;
 use icons::{icon, IconName};
 use theme::{detect_system_theme, Theme, ThemeMode, ThemePreference};
 use views::diff_view::render_diff_view;
+use views::latexdiff_dialog::render_latexdiff_dialog;
 use views::editor::LatexEditor;
 #[allow(unused_imports)]
 use views::pdf_preview::render_pdf_preview;
@@ -426,6 +427,162 @@ impl VorTexApp {
             base_rev: commit.hash,
         };
         self.open_git_diff(spec, cx);
+    }
+
+    /// Opens the "Compare Versions" dialog and loads the project's commit history.
+    pub fn open_latexdiff_dialog(&mut self, cx: &mut Context<Self>) {
+        let Some(project) = self.state.current_project.clone() else {
+            return;
+        };
+        let d = &mut self.state.latexdiff;
+        d.open = true;
+        if d.running {
+            cx.notify();
+            return;
+        }
+        d.loading = true;
+        d.error = None;
+        cx.notify();
+        let active = self.active_file_path();
+
+        cx.spawn(|this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                let loaded = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let project = std::path::PathBuf::from(project);
+                        let root = git::repo_root(&project)?;
+                        let scope = git::relative_path(&root, &project).unwrap_or_default();
+                        let main_rel = latexdiff::find_main_document(active.as_deref().map(std::path::Path::new), &project)
+                            .and_then(|main| git::relative_path(&root, &main));
+                        let commits = git::log(&root, &scope, 200);
+                        Some((root, scope, main_rel, commits))
+                    })
+                    .await;
+                let _ = this.update(&mut cx, |this, cx| {
+                    let d = &mut this.state.latexdiff;
+                    d.loading = false;
+                    match loaded {
+                        Some((root, scope, main_rel, commits)) => {
+                            d.repo_root = Some(root);
+                            d.scope = scope;
+                            d.main_rel = main_rel;
+                            // Default: latest commit → working copy
+                            d.old = (!commits.is_empty()).then_some(0);
+                            d.new = None;
+                            d.commits = commits;
+                        }
+                        None => {
+                            d.repo_root = None;
+                            d.commits.clear();
+                            d.old = None;
+                            d.new = None;
+                        }
+                    }
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    pub fn generate_latexdiff(&mut self, cx: &mut Context<Self>) {
+        let d = &self.state.latexdiff;
+        let (Some(root), Some(main_rel), Some(old)) = (d.repo_root.clone(), d.main_rel.clone(), d.old) else {
+            return;
+        };
+        if d.running {
+            return;
+        }
+        let old_rev = d.commits[old].hash.clone();
+        let new_rev = d.new.map(|i| d.commits[i].hash.clone());
+        let name = latexdiff::output_name(&main_rel, &old_rev, new_rev.as_deref());
+        let main_dir = root.join(&main_rel).parent().map(|p| p.to_path_buf()).unwrap_or_else(|| root.clone());
+        let req = latexdiff::LatexDiffRequest {
+            repo_root: root,
+            scope: d.scope.clone(),
+            main_rel,
+            old_rev,
+            new_rev,
+            output_pdf: main_dir.join(&name),
+        };
+
+        // The working copy is read from disk, so unsaved edits must land first.
+        if req.new_rev.is_none() {
+            self.save_active_file(cx);
+        }
+        let d = &mut self.state.latexdiff;
+        d.running = true;
+        d.error = None;
+        self.state.status_message = Some("Generating change-tracking PDF…".to_string());
+        cx.notify();
+
+        cx.spawn(|this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx.background_executor().spawn(async move { latexdiff::generate(&req) }).await;
+                let _ = this.update(&mut cx, |this, cx| {
+                    this.state.latexdiff.running = false;
+                    match result {
+                        Ok(pdf) => {
+                            this.state.latexdiff.open = false;
+                            this.state.status_message = Some(format!("✓ Saved {name}"));
+                            if let Some(ref proj) = this.state.current_project {
+                                if let Ok(tree) = this.state.backend.read_tree(proj) {
+                                    this.state.file_tree = tree;
+                                }
+                            }
+                            this.show_pdf(pdf.to_string_lossy().to_string(), cx);
+                        }
+                        Err(err) => {
+                            this.state.status_message = Some("✗ latexdiff PDF failed".to_string());
+                            this.state.latexdiff.error = Some(err);
+                        }
+                    }
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Shows `pdf_path` in the right pane (re-rendering it if it is already open).
+    fn show_pdf(&mut self, pdf_path: String, cx: &mut Context<Self>) {
+        if let Some(v) = self.state.pdf_viewers.get_mut(&pdf_path) {
+            v.last_render_mtime = None;
+            v.is_rendering = false;
+        }
+        let existing = [PaneSide::Left, PaneSide::Right].into_iter().find_map(|side| {
+            let pane = match side {
+                PaneSide::Left => &self.state.pane_left,
+                PaneSide::Right => &self.state.pane_right,
+            };
+            pane.tabs.iter().find(|t| t.path.as_deref() == Some(pdf_path.as_str())).map(|t| (side, t.id.clone()))
+        });
+        match existing {
+            Some((side, id)) => {
+                let pane = match side {
+                    PaneSide::Left => &mut self.state.pane_left,
+                    PaneSide::Right => &mut self.state.pane_right,
+                };
+                pane.switch_tab(&id);
+                self.state.active_pane = side;
+            }
+            None => {
+                let id = self.state.generate_tab_id();
+                let name = std::path::Path::new(&pdf_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Diff.pdf")
+                    .to_string();
+                self.state.pane_right.tabs.push(state::Tab::new_pdf(id.clone(), name, pdf_path.clone()));
+                self.state.pane_right.active_tab_id = Some(id);
+                self.state.active_pane = PaneSide::Right;
+            }
+        }
+        self.state.get_or_create_pdf_viewer(&pdf_path);
+        self.spawn_pdf_render_if_needed(pdf_path, cx);
     }
 
     pub fn open_project(&mut self, project_path: String, cx: &mut Context<Self>) {
@@ -1143,6 +1300,12 @@ impl Render for VorTexApp {
                 let v_git_refresh = view_handle.clone();
                 let v_git_change = view_handle.clone();
                 let v_git_commit = view_handle.clone();
+                let v_git_latexdiff = view_handle.clone();
+                let latexdiff_dialog = self.state.latexdiff.open.then(|| self.state.latexdiff.clone());
+                let v_ld_old = view_handle.clone();
+                let v_ld_new = view_handle.clone();
+                let v_ld_gen = view_handle.clone();
+                let v_ld_close = view_handle.clone();
                 let left_diff = left_active_tab_diff(&self.state);
                 let right_diff = right_active_tab_diff(&self.state);
                 let v_diff_left = view_handle.clone();
@@ -1365,6 +1528,9 @@ impl Render for VorTexApp {
                                     },
                                     move |commit, _window, cx| {
                                         v_git_commit.update(cx, |this, cx| this.open_git_commit(commit, cx));
+                                    },
+                                    move |_window, cx| {
+                                        v_git_latexdiff.update(cx, |this, cx| this.open_latexdiff_dialog(cx));
                                     },
                                 ))
                             })
@@ -1855,6 +2021,32 @@ impl Render for VorTexApp {
                             },
                         ))
                     })
+                    .when_some(latexdiff_dialog, move |d, dialog| {
+                        d.child(render_latexdiff_dialog(
+                            &dialog,
+                            move |i, _window, cx| {
+                                v_ld_old.update(cx, |this, cx| {
+                                    this.state.latexdiff.old = Some(i);
+                                    cx.notify();
+                                });
+                            },
+                            move |i, _window, cx| {
+                                v_ld_new.update(cx, |this, cx| {
+                                    this.state.latexdiff.new = i;
+                                    cx.notify();
+                                });
+                            },
+                            move |_window, cx| {
+                                v_ld_gen.update(cx, |this, cx| this.generate_latexdiff(cx));
+                            },
+                            move |_window, cx| {
+                                v_ld_close.update(cx, |this, cx| {
+                                    this.state.latexdiff.open = false;
+                                    cx.notify();
+                                });
+                            },
+                        ))
+                    })
                     .into_any_element()
             }
         }
@@ -1954,6 +2146,11 @@ fn register_app_actions(cx: &mut App, handle: WindowHandle<VorTexApp>) {
     on_app_action::<actions::Build>(cx, handle, move |app, cx| {
         if in_workspace(app) && !app.state.is_building {
             app.build_current_project(cx);
+        }
+    });
+    on_app_action::<actions::CompareVersions>(cx, handle, move |app, cx| {
+        if in_workspace(app) {
+            app.open_latexdiff_dialog(cx);
         }
     });
     on_app_action::<actions::SyncPdf>(cx, handle, move |app, cx| {

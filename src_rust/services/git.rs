@@ -135,6 +135,13 @@ pub fn file_log(root: &Path, rel_path: &str, limit: usize) -> Vec<Commit> {
         .unwrap_or_default()
 }
 
+/// Most recent commits touching anything under `scope` (repo-relative, "" = whole repo).
+pub fn log(root: &Path, scope: &str, limit: usize) -> Vec<Commit> {
+    let n = format!("-n{limit}");
+    let spec = if scope.is_empty() { "." } else { scope };
+    git_string(root, &["log", LOG_FORMAT, &n, "--", spec]).map(|raw| parse_log(&raw)).unwrap_or_default()
+}
+
 /// Contents of `rel_path` at `rev` (e.g. "HEAD" or a commit hash), if it exists there.
 pub fn file_at_revision(root: &Path, rev: &str, rel_path: &str) -> Option<Vec<u8>> {
     let spec = format!("{rev}:{rel_path}");

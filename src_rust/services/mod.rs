@@ -7,6 +7,7 @@ pub mod git;
 pub mod grammar_checker;
 pub mod grammar_preprocess;
 pub mod latex_parser;
+pub mod latexdiff;
 pub mod math_preview;
 pub mod pdf_renderer;
 pub mod semantic_index;
