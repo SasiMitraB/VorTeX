@@ -16,6 +16,7 @@ pub enum ViewMode {
 pub enum SidebarTab {
     Explorer,
     OutlineTodos,
+    Git,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,8 @@ pub enum PaneSide {
 pub enum TabType {
     Text,
     Pdf,
+    /// Read-only diff view; its content lives in `AppState::diff_views` keyed by tab id.
+    Diff,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +87,58 @@ impl Tab {
             tab_type: TabType::Pdf,
         }
     }
+
+    pub fn new_diff(id: String, name: String) -> Self {
+        Self {
+            id,
+            path: None,
+            name,
+            content: String::new(),
+            cursor_row: 0,
+            cursor_col: 0,
+            selection: None,
+            scroll_top: 0.0,
+            dirty: false,
+            tab_type: TabType::Diff,
+        }
+    }
+}
+
+/// Source Control sidebar data (refreshed in the background).
+#[derive(Debug, Clone, Default)]
+pub struct GitPanelState {
+    /// Repository root; `None` when the project is not in a git repository.
+    pub root: Option<std::path::PathBuf>,
+    pub branch: Option<String>,
+    pub changes: Vec<crate::services::git::FileStatus>,
+    /// Repo-relative path of the file whose history is shown.
+    pub history_file: Option<String>,
+    pub history: Vec<crate::services::git::Commit>,
+    pub loaded: bool,
+    pub refreshing: bool,
+    /// Absolute path of the active file when the last refresh started
+    /// (`None` = never refreshed), so a tab switch can trigger a history reload.
+    pub refreshed_for: Option<Option<String>>,
+    pub scroll_handle: gpui::ScrollHandle,
+}
+
+/// What a diff tab compares: `base_rev` version of a file against the working copy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiffSpec {
+    pub root: std::path::PathBuf,
+    pub rel_path: String,
+    pub base_rev: String,
+    /// Human-readable base, e.g. "HEAD" or "a1b2c3d · Fix typo".
+    pub base_label: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiffViewState {
+    pub spec: DiffSpec,
+    pub diff: Option<crate::services::git::FileDiff>,
+    /// Shown instead of the diff (binary file, still loading, ...).
+    pub message: Option<String>,
+    pub scroll_handle: gpui::ScrollHandle,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -237,6 +292,8 @@ pub struct AppState {
     pub sidebar_outline_scroll_handle: gpui::ScrollHandle,
     pub sidebar_todo_scroll_handle: gpui::ScrollHandle,
     pub pdf_viewers: HashMap<String, PdfViewerState>,
+    pub git: GitPanelState,
+    pub diff_views: HashMap<String, DiffViewState>,
     pub pdf_dpi: u32,
     pub theme_mode: ThemeMode,
     pub theme_preference: ThemePreference,
@@ -272,6 +329,8 @@ impl AppState {
             sidebar_outline_scroll_handle: gpui::ScrollHandle::new(),
             sidebar_todo_scroll_handle: gpui::ScrollHandle::new(),
             pdf_viewers: HashMap::new(),
+            git: GitPanelState::default(),
+            diff_views: HashMap::new(),
             pdf_dpi: 144,
             theme_mode: detect_system_theme(),
             theme_preference: ThemePreference::Auto,

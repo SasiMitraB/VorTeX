@@ -30,6 +30,7 @@ walkdir = "2.5"
 chrono = "0.4"
 mupdf = "0.8"
 harper-core = "2"
+similar = { version = "2", features = ["inline"] }
 
 [dev-dependencies]
 tempfile = "3.10"

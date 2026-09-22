@@ -1,4 +1,6 @@
+mod actions;
 mod backend;
+mod icons;
 pub mod services;
 mod state;
 mod theme;
@@ -7,10 +9,13 @@ mod views;
 use backend::{BackendClient, FileChangeEvent, IndexStats};
 use gpui::prelude::*;
 use gpui::*;
-use state::{AppState, PaneSide, TabType, ViewMode};
+use services::git;
+use state::{AppState, DiffSpec, DiffViewState, PaneSide, SidebarTab, TabType, ViewMode};
 use std::sync::mpsc;
 use std::sync::Arc;
+use icons::{icon, IconName};
 use theme::{detect_system_theme, Theme, ThemeMode, ThemePreference};
+use views::diff_view::render_diff_view;
 use views::editor::LatexEditor;
 #[allow(unused_imports)]
 use views::pdf_preview::render_pdf_preview;
@@ -168,6 +173,261 @@ impl VorTexApp {
         cx.notify();
     }
 
+    pub fn show_projects(&mut self, cx: &mut Context<Self>) {
+        self.state.current_view = ViewMode::ProjectSelector;
+        if let Some(ref folder) = self.state.projects_folder {
+            if let Ok(projs) = self.state.backend.scan_projects(folder) {
+                self.state.projects = projs;
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn change_projects_folder(&mut self, cx: &mut Context<Self>) {
+        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+            let folder_str = folder.to_str().unwrap().to_string();
+            self.state.projects_folder = Some(folder_str.clone());
+            let _ = self.state.backend.config_set("projectsFolder", serde_json::json!(folder_str));
+            if let Ok(projs) = self.state.backend.scan_projects(&folder_str) {
+                self.state.projects = projs;
+            }
+            cx.notify();
+        }
+    }
+
+    pub fn open_file_dialog(&mut self, cx: &mut Context<Self>) {
+        if let Some(file) = rfd::FileDialog::new()
+            .add_filter("LaTeX Documents", &["tex", "bib", "pdf", "md", "txt"])
+            .pick_file()
+        {
+            let path_str = file.to_str().unwrap().to_string();
+            let content = self.state.backend.read_file(&path_str).unwrap_or_default();
+            self.state.current_view = ViewMode::Workspace;
+            self.open_file_in_active_pane(path_str, content, cx);
+        }
+    }
+
+    pub fn open_folder_dialog(&mut self, cx: &mut Context<Self>) {
+        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+            let folder_str = folder.to_str().unwrap().to_string();
+            self.open_project(folder_str, cx);
+        }
+    }
+
+    pub fn new_tab(&mut self, cx: &mut Context<Self>) {
+        self.state.current_view = ViewMode::Workspace;
+        self.state.create_new_tab();
+        cx.notify();
+    }
+
+    pub fn close_active_tab(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.state.active_pane_state().active_tab_id.clone() {
+            self.state.active_pane_state_mut().close_tab(&id);
+            cx.notify();
+        }
+    }
+
+    pub fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.state.sidebar_visible = !self.state.sidebar_visible;
+        cx.notify();
+    }
+
+    /// Opens the table editor, pre-loaded with the table under the cursor if there is one.
+    pub fn open_table_editor(&mut self, cx: &mut Context<Self>) {
+        let cur_file = self.state.active_tab().and_then(|t| t.path.clone());
+        let table_under_cursor = self.editor_left.read(cx).find_table_at_cursor();
+        if let Some((table_src, span)) = table_under_cursor {
+            self.table_sheet.load_from_latex(&table_src, Some(span), cur_file);
+        } else {
+            self.table_sheet = TableSpreadsheet::default();
+            self.table_sheet.model.source_file = cur_file;
+        }
+        self.table_sheet.is_open = true;
+        cx.notify();
+    }
+
+    /// Absolute path of the file in the active tab (text or PDF).
+    fn active_file_path(&self) -> Option<String> {
+        self.state.active_tab().filter(|t| t.tab_type != TabType::Diff).and_then(|t| t.path.clone())
+    }
+
+    /// Reloads branch, changed files and the active file's history in the background.
+    pub fn refresh_git(&mut self, cx: &mut Context<Self>) {
+        let Some(project) = self.state.current_project.clone() else {
+            return;
+        };
+        let active_file = self.active_file_path();
+        self.state.git.refreshed_for = Some(active_file.clone());
+        if self.state.git.refreshing {
+            return;
+        }
+        self.state.git.refreshing = true;
+        cx.notify();
+        let requested_for = active_file.clone();
+
+        cx.spawn(|this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let root = git::repo_root(std::path::Path::new(&project))?;
+                        let branch = git::current_branch(&root);
+                        let changes = git::status(&root);
+                        let history_file = active_file
+                            .as_deref()
+                            .and_then(|p| git::relative_path(&root, std::path::Path::new(p)));
+                        let history = history_file
+                            .as_deref()
+                            .map(|rel| git::file_log(&root, rel, 50))
+                            .unwrap_or_default();
+                        Some((root, branch, changes, history_file, history))
+                    })
+                    .await;
+                let _ = this.update(&mut cx, |this, cx| {
+                    let g = &mut this.state.git;
+                    g.refreshing = false;
+                    g.loaded = true;
+                    match result {
+                        Some((root, branch, changes, history_file, history)) => {
+                            g.root = Some(root);
+                            g.branch = branch;
+                            g.changes = changes;
+                            g.history_file = history_file;
+                            g.history = history;
+                        }
+                        None => {
+                            g.root = None;
+                            g.changes.clear();
+                            g.history.clear();
+                            g.history_file = None;
+                        }
+                    }
+                    // The active file changed while this refresh ran: load its history too.
+                    if this.state.git.refreshed_for != Some(requested_for) {
+                        this.refresh_git(cx);
+                    }
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Refresh button: also re-reads HEAD for the gutter markers (it may have moved).
+    pub fn refresh_git_all(&mut self, cx: &mut Context<Self>) {
+        self.editor_left.update(cx, |ed, cx| {
+            ed.invalidate_git_base();
+            cx.notify();
+        });
+        self.editor_right.update(cx, |ed, cx| {
+            ed.invalidate_git_base();
+            cx.notify();
+        });
+        self.refresh_git(cx);
+    }
+
+    /// Opens (or re-focuses) a diff tab comparing `spec.base_rev` with the working copy.
+    pub fn open_git_diff(&mut self, spec: DiffSpec, cx: &mut Context<Self>) {
+        let existing = self
+            .state
+            .diff_views
+            .iter()
+            .find(|(_, v)| v.spec == spec)
+            .map(|(id, _)| id.clone())
+            .filter(|id| self.state.active_pane_state().tabs.iter().any(|t| &t.id == id));
+        let tab_id = match existing {
+            Some(id) => id,
+            None => {
+                let id = self.state.generate_tab_id();
+                let file_name = spec.rel_path.rsplit('/').next().unwrap_or(&spec.rel_path);
+                let rev = if spec.base_rev == "HEAD" { "HEAD".to_string() } else { spec.base_rev.chars().take(7).collect() };
+                let pane = self.state.active_pane_state_mut();
+                pane.tabs.push(state::Tab::new_diff(id.clone(), format!("{file_name} ({rev})")));
+                self.state.diff_views.insert(
+                    id.clone(),
+                    DiffViewState { spec, diff: None, message: None, scroll_handle: gpui::ScrollHandle::new() },
+                );
+                id
+            }
+        };
+        self.state.active_pane_state_mut().switch_tab(&tab_id);
+        self.load_diff(tab_id, cx);
+    }
+
+    /// (Re)computes a diff tab's contents. The working copy is the open editor's
+    /// buffer when the file is being edited (so unsaved changes show), else the file on disk.
+    pub fn load_diff(&mut self, tab_id: String, cx: &mut Context<Self>) {
+        let Some(view) = self.state.diff_views.get(&tab_id) else {
+            return;
+        };
+        let spec = view.spec.clone();
+        let abs = spec.root.join(&spec.rel_path);
+        let abs_str = abs.to_string_lossy().to_string();
+        let buffer = [&self.editor_left, &self.editor_right].into_iter().find_map(|ed| {
+            let ed = ed.read(cx);
+            (ed.current_file_path.as_deref() == Some(abs_str.as_str())).then(|| ed.get_content())
+        });
+
+        cx.spawn(|this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                let outcome = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let base = git::file_at_revision(&spec.root, &spec.base_rev, &spec.rel_path).unwrap_or_default();
+                        let current = match buffer {
+                            Some(text) => text.into_bytes(),
+                            None => std::fs::read(&abs).unwrap_or_default(),
+                        };
+                        match (git::as_text(&base), git::as_text(&current)) {
+                            (Some(old), Some(new)) => Ok(git::unified_diff(&old, &new, 3)),
+                            _ => Err("Binary file — no text diff to show".to_string()),
+                        }
+                    })
+                    .await;
+                let _ = this.update(&mut cx, |this, cx| {
+                    if let Some(view) = this.state.diff_views.get_mut(&tab_id) {
+                        match outcome {
+                            Ok(diff) => {
+                                view.diff = Some(diff);
+                                view.message = None;
+                            }
+                            Err(msg) => {
+                                view.diff = None;
+                                view.message = Some(msg);
+                            }
+                        }
+                        cx.notify();
+                    }
+                });
+            }
+        })
+        .detach();
+    }
+
+    pub fn open_git_change(&mut self, rel_path: String, cx: &mut Context<Self>) {
+        let Some(root) = self.state.git.root.clone() else {
+            return;
+        };
+        let spec = DiffSpec { root, rel_path, base_rev: "HEAD".to_string(), base_label: "HEAD".to_string() };
+        self.open_git_diff(spec, cx);
+    }
+
+    pub fn open_git_commit(&mut self, commit: git::Commit, cx: &mut Context<Self>) {
+        let (Some(root), Some(rel_path)) = (self.state.git.root.clone(), self.state.git.history_file.clone()) else {
+            return;
+        };
+        let subject: String = commit.subject.chars().take(48).collect();
+        let spec = DiffSpec {
+            root,
+            rel_path,
+            base_label: format!("{} · {}", commit.short_hash, subject),
+            base_rev: commit.hash,
+        };
+        self.open_git_diff(spec, cx);
+    }
+
     pub fn open_project(&mut self, project_path: String, cx: &mut Context<Self>) {
         self.state.current_project = Some(project_path.clone());
         self.state.current_view = ViewMode::Workspace;
@@ -204,6 +464,10 @@ impl VorTexApp {
                 self.open_file_in_active_pane(main_tex.to_str().unwrap().to_string(), content, cx);
             }
         }
+
+        self.state.git = state::GitPanelState::default();
+        self.state.diff_views.clear();
+        self.refresh_git(cx);
 
         cx.notify();
     }
@@ -257,7 +521,7 @@ impl VorTexApp {
         let tab_opt = self.state.active_tab().cloned();
 
         if let Some(tab) = tab_opt {
-            if tab.tab_type == TabType::Pdf {
+            if tab.tab_type != TabType::Text {
                 return;
             }
 
@@ -291,6 +555,7 @@ impl VorTexApp {
                     if let Ok(todos) = self.state.backend.get_todos(None) {
                         self.state.todos = todos;
                     }
+                    self.refresh_git(cx);
                 }
             } else {
                 // Save As via native dialog
@@ -691,6 +956,9 @@ impl VorTexApp {
             match ev {
                 BackendEvent::FileChange(change) => {
                     self.state.status_message = Some(format!("File {}: {}", change.change_type, change.path));
+                    if self.state.sidebar_tab == SidebarTab::Git {
+                        self.refresh_git(cx);
+                    }
                     if change.path.to_lowercase().ends_with(".pdf") {
                         if let Some(v) = self.state.pdf_viewers.get_mut(&change.path) {
                             v.last_render_mtime = None;
@@ -820,7 +1088,6 @@ impl Render for VorTexApp {
 
         let current_view = self.state.current_view;
         let view_handle = cx.entity().clone();
-        let theme_label = self.state.theme_preference.label(self.state.theme_mode);
 
         match current_view {
             ViewMode::ProjectSelector => {
@@ -830,35 +1097,18 @@ impl Render for VorTexApp {
 
                 let view1 = view_handle.clone();
                 let view2 = view_handle.clone();
-                let view_theme = view_handle.clone();
 
                 render_project_selector(
                     &projects,
                     projects_folder.as_deref(),
                     &proj_scroll,
-                    &theme_label,
                     move |proj_path, _window, cx| {
                         view1.update(cx, |this, cx| {
                             this.open_project(proj_path, cx);
                         });
                     },
                     move |_window, cx| {
-                        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-                            let folder_str = folder.to_str().unwrap().to_string();
-                            view2.update(cx, |this, cx| {
-                                this.state.projects_folder = Some(folder_str.clone());
-                                let _ = this.state.backend.config_set("projectsFolder", serde_json::json!(folder_str));
-                                if let Ok(projs) = this.state.backend.scan_projects(&folder_str) {
-                                    this.state.projects = projs;
-                                }
-                                cx.notify();
-                            });
-                        }
-                    },
-                    move |_window, cx| {
-                        view_theme.update(cx, |this, cx| {
-                            this.toggle_theme(cx);
-                        });
+                        view2.update(cx, |this, cx| this.change_projects_folder(cx));
                     },
                 )
                 .into_any_element()
@@ -881,6 +1131,22 @@ impl Render for VorTexApp {
                 let active_tab_path = self.state.active_tab().and_then(|t| t.path.clone());
                 let act_sidebar = active_tab_path.clone();
                 let act_statusbar = active_tab_path.clone();
+
+                // Keep the Source Control panel's history in sync with the active file
+                if sidebar_vis
+                    && sidebar_tab == SidebarTab::Git
+                    && self.state.git.refreshed_for.as_ref() != Some(&self.active_file_path())
+                {
+                    self.refresh_git(cx);
+                }
+                let git_state = self.state.git.clone();
+                let v_git_refresh = view_handle.clone();
+                let v_git_change = view_handle.clone();
+                let v_git_commit = view_handle.clone();
+                let left_diff = left_active_tab_diff(&self.state);
+                let right_diff = right_active_tab_diff(&self.state);
+                let v_diff_left = view_handle.clone();
+                let v_diff_right = view_handle.clone();
 
                 let tree_scroll = self.state.sidebar_tree_scroll_handle.clone();
                 let outline_scroll = self.state.sidebar_outline_scroll_handle.clone();
@@ -944,12 +1210,7 @@ impl Render for VorTexApp {
                 let is_building = self.state.is_building;
                 let v_back = view_handle.clone();
                 let v_toggle = view_handle.clone();
-                let v_open_f = view_handle.clone();
-                let v_open_d = view_handle.clone();
-                let v_new_f = view_handle.clone();
-                let v_save = view_handle.clone();
                 let v_build = view_handle.clone();
-                let v_table = view_handle.clone();
 
                 let v_toggle_folder = view_handle.clone();
                 let v_open_tree_file = view_handle.clone();
@@ -998,7 +1259,6 @@ impl Render for VorTexApp {
                 let v_right_inverse = view_handle.clone();
 
                 let v_sync_forward = view_handle.clone();
-                let v_theme = view_handle.clone();
 
                 div()
                     .size_full()
@@ -1006,138 +1266,23 @@ impl Render for VorTexApp {
                     .flex()
                     .flex_col()
                     .overflow_hidden()
-                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
-                        let key = event.keystroke.key.as_str();
-                        let is_cmd = event.keystroke.modifiers.platform || event.keystroke.modifiers.control;
-                        let is_shift = event.keystroke.modifiers.shift;
-
-                        if is_cmd {
-                            match key {
-                                "s" => {
-                                    this.save_active_file(cx);
-                                }
-                                "b" => {
-                                    this.build_current_project(cx);
-                                }
-                                "n" => {
-                                    this.state.create_new_tab();
-                                    cx.notify();
-                                }
-                                "w" => {
-                                    if let Some(id) = this.state.active_pane_state().active_tab_id.clone() {
-                                        this.state.active_pane_state_mut().close_tab(&id);
-                                        cx.notify();
-                                    }
-                                }
-                                "j" => {
-                                    // Forward SyncTeX: editor -> PDF (Cmd+J, Cmd+Shift+J both)
-                                    this.forward_sync_to_pdf(cx);
-                                }
-                                "g" => {
-                                    // Also support Cmd+G for forward sync
-                                    if is_shift {
-                                        this.forward_sync_to_pdf(cx);
-                                    }
-                                }
-                                "t" | "T" => {
-                                    if is_shift {
-                                        this.toggle_theme(cx);
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                        // Also handle Cmd+Shift+J without relying on key match above? Already covered
-                        if is_cmd && is_shift && key == "j" {
-                            this.forward_sync_to_pdf(cx);
-                        }
-                        if is_cmd && is_shift && (key == "t" || key == "T") {
-                            this.toggle_theme(cx);
-                        }
-                    }))
                     .child(
                         // Top Toolbar
                         render_toolbar(
                             project_name,
                             sidebar_vis,
                             is_building,
-                            &theme_label,
                             move |_window, cx| {
-                                v_back.update(cx, |this, cx| {
-                                    this.state.current_view = ViewMode::ProjectSelector;
-                                    if let Some(ref folder) = this.state.projects_folder {
-                                        if let Ok(projs) = this.state.backend.scan_projects(folder) {
-                                            this.state.projects = projs;
-                                        }
-                                    }
-                                    cx.notify();
-                                });
+                                v_back.update(cx, |this, cx| this.show_projects(cx));
                             },
                             move |_window, cx| {
-                                v_toggle.update(cx, |this, cx| {
-                                    this.state.sidebar_visible = !this.state.sidebar_visible;
-                                    cx.notify();
-                                });
+                                v_toggle.update(cx, |this, cx| this.toggle_sidebar(cx));
                             },
                             move |_window, cx| {
-                                if let Some(file) = rfd::FileDialog::new()
-                                    .add_filter("LaTeX Documents", &["tex", "bib", "pdf", "md", "txt"])
-                                    .pick_file()
-                                {
-                                    let path_str = file.to_str().unwrap().to_string();
-                                    v_open_f.update(cx, |this, cx| {
-                                        let content = this.state.backend.read_file(&path_str).unwrap_or_default();
-                                        this.open_file_in_active_pane(path_str, content, cx);
-                                    });
-                                }
+                                v_build.update(cx, |this, cx| this.build_current_project(cx));
                             },
                             move |_window, cx| {
-                                if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-                                    let folder_str = folder.to_str().unwrap().to_string();
-                                    v_open_d.update(cx, |this, cx| {
-                                        this.open_project(folder_str, cx);
-                                    });
-                                }
-                            },
-                            move |_window, cx| {
-                                v_new_f.update(cx, |this, cx| {
-                                    this.state.create_new_tab();
-                                    cx.notify();
-                                });
-                            },
-                            move |_window, cx| {
-                                v_save.update(cx, |this, cx| {
-                                    this.save_active_file(cx);
-                                });
-                            },
-                            move |_window, cx| {
-                                v_build.update(cx, |this, cx| {
-                                    this.build_current_project(cx);
-                                });
-                            },
-                            move |_window, cx| {
-                                v_table.update(cx, |this, cx| {
-                                    let cur_file = this.state.active_tab().and_then(|t| t.path.clone());
-                                    let table_under_cursor = this.editor_left.read(cx).find_table_at_cursor();
-                                    if let Some((table_src, span)) = table_under_cursor {
-                                        this.table_sheet.load_from_latex(&table_src, Some(span), cur_file);
-                                    } else {
-                                        this.table_sheet = TableSpreadsheet::default();
-                                        this.table_sheet.model.source_file = cur_file;
-                                    }
-                                    this.table_sheet.is_open = true;
-                                    cx.notify();
-                                });
-                            },
-                            move |_window, cx| {
-                                v_sync_forward.update(cx, |this, cx| {
-                                    this.forward_sync_to_pdf(cx);
-                                });
-                            },
-                            move |_window, cx| {
-                                v_theme.update(cx, |this, cx| {
-                                    this.toggle_theme(cx);
-                                });
+                                v_sync_forward.update(cx, |this, cx| this.forward_sync_to_pdf(cx));
                             },
                         ),
                     )
@@ -1163,6 +1308,9 @@ impl Render for VorTexApp {
                                     move |tab, _window, cx| {
                                         v_select_sidebar_tab.update(cx, |this, cx| {
                                             this.state.sidebar_tab = tab;
+                                            if tab == SidebarTab::Git {
+                                                this.refresh_git(cx);
+                                            }
                                             cx.notify();
                                         });
                                     },
@@ -1207,6 +1355,16 @@ impl Render for VorTexApp {
                                             this.table_sheet.is_open = true;
                                             cx.notify();
                                         });
+                                    },
+                                    &git_state,
+                                    move |_window, cx| {
+                                        v_git_refresh.update(cx, |this, cx| this.refresh_git_all(cx));
+                                    },
+                                    move |rel_path, _window, cx| {
+                                        v_git_change.update(cx, |this, cx| this.open_git_change(rel_path, cx));
+                                    },
+                                    move |commit, _window, cx| {
+                                        v_git_commit.update(cx, |this, cx| this.open_git_commit(commit, cx));
                                     },
                                 ))
                             })
@@ -1278,6 +1436,16 @@ impl Render for VorTexApp {
                                                     .child(if let Some(tab) = left_active_tab {
                                                         match tab.tab_type {
                                                             TabType::Text => ed_left.into_any_element(),
+                                                            TabType::Diff => match left_diff {
+                                                                Some(view) => {
+                                                                    let id = tab.id.clone();
+                                                                    render_diff_view(&view, move |_w, cx| {
+                                                                        v_diff_left.update(cx, |this, cx| this.load_diff(id.clone(), cx));
+                                                                    })
+                                                                    .into_any_element()
+                                                                }
+                                                                None => empty_pane_placeholder(),
+                                                            },
                                                             TabType::Pdf => {
                                                                 let pdf_path = tab.path.clone().unwrap_or_default();
                                                                 let viewer = self.state.pdf_viewers.get(&pdf_path).cloned();
@@ -1441,6 +1609,16 @@ impl Render for VorTexApp {
                                                         .child(if let Some(tab) = right_active_tab {
                                                             match tab.tab_type {
                                                                 TabType::Text => right_ed.into_any_element(),
+                                                                TabType::Diff => match right_diff {
+                                                                    Some(view) => {
+                                                                        let id = tab.id.clone();
+                                                                        render_diff_view(&view, move |_w, cx| {
+                                                                            v_diff_right.update(cx, |this, cx| this.load_diff(id.clone(), cx));
+                                                                        })
+                                                                        .into_any_element()
+                                                                    }
+                                                                    None => empty_pane_placeholder(),
+                                                                },
                                                                 TabType::Pdf => {
                                                                     let pdf_path = tab.path.clone().unwrap_or_default();
                                                                     let viewer = self.state.pdf_viewers.get(&pdf_path).cloned();
@@ -1683,6 +1861,16 @@ impl Render for VorTexApp {
     }
 }
 
+fn left_active_tab_diff(state: &AppState) -> Option<DiffViewState> {
+    let id = state.pane_left.active_tab_id.as_ref()?;
+    state.diff_views.get(id).cloned()
+}
+
+fn right_active_tab_diff(state: &AppState) -> Option<DiffViewState> {
+    let id = state.pane_right.active_tab_id.as_ref()?;
+    state.diff_views.get(id).cloned()
+}
+
 fn empty_pane_placeholder() -> AnyElement {
     div()
         .size_full()
@@ -1692,12 +1880,7 @@ fn empty_pane_placeholder() -> AnyElement {
         .items_center()
         .justify_center()
         .gap_2()
-        .child(
-            div()
-                .text_3xl()
-                .text_color(Theme::text_dim())
-                .child("λ"),
-        )
+        .child(icon(IconName::FilePlus).size(px(36.0)).text_color(Theme::text_dim()))
         .child(
             div()
                 .text_sm()
@@ -1714,8 +1897,74 @@ fn empty_pane_placeholder() -> AnyElement {
         .into_any_element()
 }
 
+/// Routes an app-level action from the menu bar / key bindings to the main window's view.
+fn on_app_action<A: Action>(
+    cx: &mut App,
+    handle: WindowHandle<VorTexApp>,
+    f: impl Fn(&mut VorTexApp, &mut Context<VorTexApp>) + 'static,
+) {
+    cx.on_action(move |_: &A, cx| {
+        let _ = handle.update(cx, |app, _window, cx| f(app, cx));
+    });
+}
+
+fn register_app_actions(cx: &mut App, handle: WindowHandle<VorTexApp>) {
+    cx.on_action(|_: &actions::Quit, cx| cx.quit());
+    cx.on_action(|_: &actions::Hide, cx| cx.hide());
+    cx.on_action(|_: &actions::HideOthers, cx| cx.hide_other_apps());
+    cx.on_action(|_: &actions::ShowAll, cx| cx.unhide_other_apps());
+    cx.on_action(|_: &actions::Minimize, cx| {
+        if let Some(window) = cx.active_window() {
+            let _ = window.update(cx, |_, window, _| window.minimize_window());
+        }
+    });
+    cx.on_action(|_: &actions::Zoom, cx| {
+        if let Some(window) = cx.active_window() {
+            let _ = window.update(cx, |_, window, _| window.zoom_window());
+        }
+    });
+
+    let in_workspace = |app: &VorTexApp| app.state.current_view == ViewMode::Workspace;
+    on_app_action::<actions::NewTab>(cx, handle, |app, cx| app.new_tab(cx));
+    on_app_action::<actions::OpenFile>(cx, handle, |app, cx| app.open_file_dialog(cx));
+    on_app_action::<actions::OpenFolder>(cx, handle, |app, cx| app.open_folder_dialog(cx));
+    on_app_action::<actions::ShowProjects>(cx, handle, |app, cx| app.show_projects(cx));
+    on_app_action::<actions::ChangeProjectsFolder>(cx, handle, |app, cx| app.change_projects_folder(cx));
+    on_app_action::<actions::ToggleTheme>(cx, handle, |app, cx| app.toggle_theme(cx));
+    on_app_action::<actions::Save>(cx, handle, move |app, cx| {
+        if in_workspace(app) {
+            app.save_active_file(cx);
+        }
+    });
+    on_app_action::<actions::CloseTab>(cx, handle, move |app, cx| {
+        if in_workspace(app) {
+            app.close_active_tab(cx);
+        }
+    });
+    on_app_action::<actions::InsertTable>(cx, handle, move |app, cx| {
+        if in_workspace(app) {
+            app.open_table_editor(cx);
+        }
+    });
+    on_app_action::<actions::ToggleSidebar>(cx, handle, move |app, cx| {
+        if in_workspace(app) {
+            app.toggle_sidebar(cx);
+        }
+    });
+    on_app_action::<actions::Build>(cx, handle, move |app, cx| {
+        if in_workspace(app) && !app.state.is_building {
+            app.build_current_project(cx);
+        }
+    });
+    on_app_action::<actions::SyncPdf>(cx, handle, move |app, cx| {
+        if in_workspace(app) {
+            app.forward_sync_to_pdf(cx);
+        }
+    });
+}
+
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    Application::new().with_assets(icons::Assets).run(|cx: &mut App| {
         cx.activate(true);
         let bounds = Bounds::centered(None, size(px(1100.0), px(760.0)), cx);
         let options = WindowOptions {
@@ -1728,9 +1977,12 @@ fn main() {
             ..Default::default()
         };
 
-        cx.open_window(options, |_window, cx| {
-            cx.new(|cx| VorTexApp::new(cx))
-        })
-        .expect("Failed to open VorTeX main window");
+        actions::bind_keys(cx);
+        cx.set_menus(actions::app_menus());
+
+        let handle = cx
+            .open_window(options, |_window, cx| cx.new(|cx| VorTexApp::new(cx)))
+            .expect("Failed to open VorTeX main window");
+        register_app_actions(cx, handle);
     });
 }
