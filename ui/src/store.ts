@@ -18,6 +18,7 @@ import type {
   TodoItem,
   TreeNode,
 } from "./bindings";
+import type { WordCount } from "./editor/wordcount";
 
 export type PaneId = "left" | "right";
 
@@ -62,6 +63,8 @@ export interface AppState {
   status: string | null;
   syncHint: string | null;
   cursor: { line: number; col: number; lines: number } | null;
+  /** Word counts of the active LaTeX file and the scope around the cursor. */
+  words: WordCount | null;
 
   git: GitStatus | null;
   history: Commit[];
@@ -100,6 +103,7 @@ export const useApp = create<AppState>()(() => ({
   status: null,
   syncHint: null,
   cursor: null,
+  words: null,
   git: null,
   history: [],
   historyFile: null,

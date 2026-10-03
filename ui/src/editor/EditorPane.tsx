@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import * as monaco from "./monaco";
 import { effectiveTheme, set, useApp, type PaneId, type Tab } from "../store";
 import { getModel } from "./models";
+import { scheduleWordCount } from "./wordcount";
 import { applyPendingReveal, registerEditor, saveViewState, takeViewState } from "./registry";
 
 type TextTab = Extract<Tab, { kind: "text" }>;
@@ -101,8 +102,10 @@ export function EditorPane({ pane, tab }: { pane: PaneId; tab: TextTab | null })
       const pos = editor.getPosition();
       const model = editor.getModel();
       if (pos && model) set({ cursor: { line: pos.lineNumber, col: pos.column, lines: model.getLineCount() } });
+      scheduleWordCount(editor);
     };
     editor.onDidChangeCursorPosition(cursor);
+    editor.onDidChangeModelContent(() => scheduleWordCount(editor));
     editor.onDidFocusEditorText(() => {
       set({ activePane: pane });
       cursor();
@@ -134,6 +137,7 @@ export function EditorPane({ pane, tab }: { pane: PaneId; tab: TextTab | null })
       applyPendingReveal(tab.key, editor);
       const pos = editor.getPosition();
       set({ cursor: { line: pos?.lineNumber ?? 1, col: pos?.column ?? 1, lines: model.getLineCount() } });
+      scheduleWordCount(editor);
     }
   }, [tab?.id, tab?.key]);
 

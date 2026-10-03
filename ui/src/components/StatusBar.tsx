@@ -8,6 +8,7 @@ export function StatusBar() {
   const sync = useApp((s) => s.syncHint);
   const stats = useApp((s) => s.stats);
   const cursor = useApp((s) => s.cursor);
+  const words = useApp((s) => s.words);
   const errors = build?.diagnostics.filter((d) => d.severity === "error").length ?? 0;
   const warnings = build?.diagnostics.filter((d) => d.severity === "warning").length ?? 0;
 
@@ -37,6 +38,16 @@ export function StatusBar() {
       {stats && (
         <span className="status-item muted">
           {stats.labels} labels · {stats.bibentries} bib entries · {stats.filesIndexed} files
+        </span>
+      )}
+      {words && (
+        <span className="status-item muted" title="Words of prose: commands, math, comments and the preamble are not counted">
+          {words.scope && (
+            <>
+              <span className="ellipsis">{words.scope.label}</span> {words.scope.words.toLocaleString()} ·
+            </>
+          )}{" "}
+          {words.total.toLocaleString()} words
         </span>
       )}
       {cursor && (
