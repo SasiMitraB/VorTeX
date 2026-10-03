@@ -157,12 +157,25 @@ pub async fn create_folder(state: State<'_, Shared>, path: String) -> CmdResult<
 pub async fn rename_path(state: State<'_, Shared>, from: String, to: String) -> CmdResult<()> {
     let (from, to) = (state.in_project(&from)?, state.in_project(&to)?);
     blocking(move || {
-        if to.exists() {
+        // On case-insensitive disks `to` "exists" when only the case changes; that rename is fine.
+        if to.exists() && !same_file(&from, &to) {
             return Err(format!("{} already exists", to.display()));
         }
         std::fs::rename(&from, &to).map_err(|e| format!("Could not rename {}: {e}", from.display()))
     })
     .await
+}
+
+fn same_file(a: &Path, b: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        matches!((std::fs::metadata(a), std::fs::metadata(b)), (Ok(x), Ok(y)) if x.dev() == y.dev() && x.ino() == y.ino())
+    }
+    #[cfg(not(unix))]
+    {
+        a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    }
 }
 
 /// Moves a file or folder inside the project to the Trash.

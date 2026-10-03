@@ -111,6 +111,10 @@ export const commands = {
 	 *  next to the main document, and returns its path.
 	 */
 	latexdiff: (active: string | null, oldRev: string, newRev: string | null) => __TAURI_INVOKE<string>("latexdiff", { active, oldRev, newRev }),
+	/**  What the "Prepare submission" dialog offers. */
+	submissionInfo: (active: string | null) => __TAURI_INVOKE<SubmissionInfo>("submission_info", { active }),
+	/**  Builds a cleaned, verified source tarball in `<project>/submitted_versions/`. */
+	prepareSubmission: (active: string | null, options: SubmissionOptions) => __TAURI_INVOKE<SubmissionReport>("prepare_submission", { active, options }),
 	/**
 	 *  Grammar and spelling issues in `text` (a whole `.tex` buffer). `dialect` defaults to the setting.
 	 *  Citations are read as author–year text using the project's bibliography.
@@ -187,6 +191,8 @@ export type Commit = {
 	author: string,
 	relativeDate: string,
 	subject: string,
+	/**  Tags pointing at this commit. */
+	tags: string[],
 };
 
 export type CompletionItem = {
@@ -337,7 +343,7 @@ export type MathAt = {
  *  A menu item or its shortcut was used. `closeWindow` is sent when the user closes
  *  the window, so the UI can ask about unsaved changes and then call `quit`.
  */
-export type MenuCommand = "quit" | "closeWindow" | "newTab" | "openFile" | "openFolder" | "save" | "closeTab" | "showProjects" | "changeProjectsFolder" | "undo" | "redo" | "find" | "toggleComment" | "insertTable" | "toggleSidebar" | "cycleTheme" | "build" | "cleanBuild" | "syncPdf" | "compareVersions";
+export type MenuCommand = "quit" | "closeWindow" | "newTab" | "openFile" | "openFolder" | "save" | "closeTab" | "showProjects" | "changeProjectsFolder" | "undo" | "redo" | "find" | "toggleComment" | "insertTable" | "toggleSidebar" | "cycleTheme" | "build" | "cleanBuild" | "syncPdf" | "compareVersions" | "prepareSubmission";
 
 export type ProjectInfo = {
 	/**  Canonical path of the project folder. */
@@ -397,6 +403,49 @@ export type SourceLocation = {
 	/**  0-based; 0 when SyncTeX doesn't know the column. */
 	column: number,
 };
+
+export type SubmissionInfo = {
+	/**  Main document relative to the project folder, if one was found. */
+	mainRel: string | null,
+	/**  Whether "last commit" can be offered. */
+	inGit: boolean,
+	/**  Where submission folders are created. */
+	outputRoot: string,
+};
+
+export type SubmissionOptions = {
+	target: SubmissionTarget,
+	/**  Package the last commit instead of the files on disk. */
+	fromHead: boolean,
+	stripComments: boolean,
+	/**  Ship only the cited `.bib` entries. */
+	pruneBib: boolean,
+	/**  Tag the packaged commit `submitted/<name>` (skipped when packaged files are uncommitted). */
+	tag: boolean,
+};
+
+export type SubmissionReport = {
+	folder: string,
+	tarball: string,
+	/**  The PDF the tarball compiles to (absent when the check build failed). */
+	pdf: string | null,
+	sizeBytes: number,
+	/**  Packaged files, relative to the main document's folder. */
+	files: string[],
+	/**  What was cleaned up (comments stripped, entries pruned). */
+	steps: string[],
+	/**  Outcome of the check build and the PDF comparison. */
+	verification: string[],
+	warnings: string[],
+	/**  The git tag created on the packaged commit. */
+	tag: string | null,
+};
+
+export type SubmissionTarget = 
+/**  Sources + `.bbl` (arXiv does not run BibTeX); checked with the engine alone. */
+"arxiv" | 
+/**  Sources + `.bbl` + `.bib` + `.bst`; checked with the full latexmk pipeline. */
+"journal";
 
 /**  The box to highlight for a forward-search result, in PDF points from the page's top-left. */
 export type SynctexRect = {

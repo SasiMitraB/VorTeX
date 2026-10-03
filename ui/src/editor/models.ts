@@ -82,7 +82,7 @@ export function reloadIfClean(key: string, text: string) {
   saved.set(key, model.getAlternativeVersionId());
 }
 
-/** After Save As: the untitled buffer becomes the file at `path`. */
+/** After Save As or a rename: the model now belongs to `newKey`, keeping its unsaved state. */
 export function rekey(oldKey: string, newKey: string) {
   const model = models.get(oldKey);
   if (!model) return;
@@ -93,8 +93,8 @@ export function rekey(oldKey: string, newKey: string) {
   saved.delete(oldKey);
   monaco.editor.setModelLanguage(model, languageFor(newKey));
   set((s) => {
-    const { [oldKey]: _, ...dirty } = s.dirty;
-    return { dirty };
+    const { [oldKey]: wasDirty, ...dirty } = s.dirty;
+    return { dirty: wasDirty ? { ...dirty, [newKey]: true } : dirty };
   });
 }
 

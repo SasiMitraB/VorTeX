@@ -31,29 +31,37 @@ function install(editor: monaco.editor.IStandaloneCodeEditor) {
     });
   });
 
-  // Enter continues `\item` lists; Enter on an empty `\item` ends the list.
-  editor.addCommand(
-    monaco.KeyCode.Enter,
-    () => {
-      const model = editor.getModel();
-      const pos = editor.getPosition();
-      const sel = editor.getSelection();
-      if (!model || !pos || !sel?.isEmpty()) return editor.trigger("keyboard", "type", { text: "\n" });
-      const line = model.getLineContent(pos.lineNumber);
-      const atEnd = pos.column === line.length + 1;
-      if (atEnd && /^\s*\\item\s*$/.test(line)) {
-        const indent = line.match(/^\s*/)![0];
-        editor.executeEdits("item", [
-          { range: new monaco.Range(pos.lineNumber, 1, pos.lineNumber, line.length + 1), text: indent },
-        ]);
-        return;
-      }
-      editor.trigger("keyboard", "type", { text: "\n" });
-      if (/^\s*\\item\b/.test(line) && atEnd) editor.trigger("keyboard", "type", { text: "\\item " });
-    },
-    "editorTextFocus && !suggestWidgetVisible && !inSnippetMode && !editorReadonly",
-  );
 }
+
+// Enter continues `\item` lists; Enter on an empty `\item` ends the list.
+// Registered once, globally: `editor.addCommand` keybindings are shared by all editors and the
+// last one registered wins, so a per-editor closure would type into the other pane's editor.
+function onEnter() {
+  const editor = monaco.editor.getEditors().find((e) => e.hasTextFocus());
+  if (!editor) return;
+  const model = editor.getModel();
+  const pos = editor.getPosition();
+  const sel = editor.getSelection();
+  if (!model || !pos || !sel?.isEmpty()) return editor.trigger("keyboard", "type", { text: "\n" });
+  const line = model.getLineContent(pos.lineNumber);
+  const atEnd = pos.column === line.length + 1;
+  if (atEnd && /^\s*\\item\s*$/.test(line)) {
+    const indent = line.match(/^\s*/)![0];
+    editor.executeEdits("item", [
+      { range: new monaco.Range(pos.lineNumber, 1, pos.lineNumber, line.length + 1), text: indent },
+    ]);
+    return;
+  }
+  editor.trigger("keyboard", "type", { text: "\n" });
+  if (/^\s*\\item\b/.test(line) && atEnd) editor.trigger("keyboard", "type", { text: "\\item " });
+}
+
+monaco.editor.addCommand({ id: "vortex.enter", run: onEnter });
+monaco.editor.addKeybindingRule({
+  keybinding: monaco.KeyCode.Enter,
+  command: "vortex.enter",
+  when: "editorTextFocus && !suggestWidgetVisible && !inSnippetMode && !editorReadonly",
+});
 
 export function EditorPane({ pane, tab }: { pane: PaneId; tab: TextTab | null }) {
   const host = useRef<HTMLDivElement>(null);

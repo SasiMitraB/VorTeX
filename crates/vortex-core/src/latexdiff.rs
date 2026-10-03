@@ -30,15 +30,16 @@ pub fn output_name(main_rel: &str, old_rev: &str, new_rev: Option<&str>) -> Stri
     format!("{stem}-diff-{}-{new}.pdf", short(old_rev))
 }
 
-struct TempDir(PathBuf);
+/// A temporary folder that is deleted when dropped.
+pub(crate) struct TempDir(pub(crate) PathBuf);
 
 impl TempDir {
-    fn new() -> Result<Self, String> {
+    pub(crate) fn new(prefix: &str) -> Result<Self, String> {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("vortex-latexdiff-{}-{nanos}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()));
         std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create temp folder: {e}"))?;
         Ok(Self(dir))
     }
@@ -63,7 +64,7 @@ fn pathspec(scope: &str) -> &str {
 }
 
 /// Extracts the `scope` tree of `rev` into `dest` via `git archive | tar -x`.
-fn export_revision(root: &Path, rev: &str, scope: &str, dest: &Path) -> Result<(), String> {
+pub(crate) fn export_revision(root: &Path, rev: &str, scope: &str, dest: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dest).map_err(|e| e.to_string())?;
     let mut archive = Command::new("git")
         .args(["archive", "--format=tar", rev, "--", pathspec(scope)])
@@ -189,7 +190,7 @@ fn diff_and_compile(old_main: &Path, new_main: &Path, engine: Engine, extra: &[&
 
 /// Builds the change-tracking PDF and copies it to `req.output_pdf`.
 pub fn generate(req: &LatexDiffRequest) -> Result<PathBuf, String> {
-    let tmp = TempDir::new()?;
+    let tmp = TempDir::new("vortex-latexdiff")?;
     let old_dir = tmp.0.join("old");
     let new_dir = tmp.0.join("new");
 

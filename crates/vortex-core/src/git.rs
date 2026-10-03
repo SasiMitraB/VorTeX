@@ -114,9 +114,11 @@ pub struct Commit {
     pub author: String,
     pub relative_date: String,
     pub subject: String,
+    /// Tags pointing at this commit.
+    pub tags: Vec<String>,
 }
 
-const LOG_FORMAT: &str = "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%s";
+const LOG_FORMAT: &str = "--format=%H%x1f%h%x1f%an%x1f%ar%x1f%D%x1f%s";
 
 pub fn parse_log(raw: &str) -> Vec<Commit> {
     raw.lines()
@@ -127,6 +129,13 @@ pub fn parse_log(raw: &str) -> Vec<Commit> {
                 short_hash: f.next()?.to_string(),
                 author: f.next()?.to_string(),
                 relative_date: f.next()?.to_string(),
+                // %D: "HEAD -> main, tag: v1, origin/main"
+                tags: f
+                    .next()?
+                    .split(", ")
+                    .filter_map(|r| r.strip_prefix("tag: "))
+                    .map(str::to_string)
+                    .collect(),
                 subject: f.next().unwrap_or("").to_string(),
             })
         })
@@ -146,6 +155,28 @@ pub fn log(root: &Path, scope: &str, limit: usize) -> Vec<Commit> {
     let n = format!("-n{limit}");
     let spec = if scope.is_empty() { "." } else { scope };
     git_string(root, &["log", LOG_FORMAT, &n, "--", spec]).map(|raw| parse_log(&raw)).unwrap_or_default()
+}
+
+pub fn head_commit(root: &Path) -> Option<String> {
+    git_string(root, &["rev-parse", "HEAD"])
+}
+
+pub fn tag_exists(root: &Path, name: &str) -> bool {
+    git(root, &["rev-parse", "--verify", "--quiet", &format!("refs/tags/{name}")]).is_some()
+}
+
+/// Creates the annotated tag `name` on `rev`.
+pub fn create_tag(root: &Path, name: &str, rev: &str, message: &str) -> Result<(), String> {
+    let out = Command::new("git")
+        .args(["tag", "-a", name, "-m", message, rev])
+        .current_dir(root)
+        .output()
+        .map_err(|e| format!("Could not run git: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
 }
 
 /// Contents of `rel_path` at `rev` (e.g. "HEAD" or a commit hash), if it exists there.

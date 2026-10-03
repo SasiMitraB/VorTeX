@@ -6,6 +6,7 @@ import { commands, type LatexDiffOptions } from "../bindings";
 import { activeTab, get } from "../store";
 import { openPdf, saveAllFiles } from "../actions";
 import { Dialog, closeDialog } from "./Dialog";
+import { TagChips } from "./Sidebar";
 
 const activePath = () => {
   const t = activeTab(get());
@@ -57,6 +58,7 @@ export function LatexDiffDialog() {
       {opts?.commits.map((c) => (
         <div key={c.hash} className={`commit-pick ${value === c.hash ? "on" : ""}`} onClick={() => onPick(c.hash)}>
           <div className="ellipsis">{c.subject}</div>
+          <TagChips tags={c.tags} />
           <div className="muted small">
             <span className="mono">{c.shortHash}</span> · {c.author} · {c.relativeDate}
           </div>

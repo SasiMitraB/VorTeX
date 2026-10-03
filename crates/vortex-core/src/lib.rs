@@ -22,6 +22,7 @@ pub mod pdf_renderer;
 pub mod project;
 pub mod semantic_index;
 pub mod settings;
+pub mod submission;
 pub mod synctex;
 pub mod table_editor;
 pub mod table_parser;

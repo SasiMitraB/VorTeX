@@ -1,4 +1,4 @@
-//! latexdiff, grammar checking, math previews and the table editor.
+//! latexdiff, submission packaging, grammar checking, math previews and the table editor.
 
 use crate::state::{blocking, CmdResult, Shared};
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,7 @@ use vortex_core::settings::Settings;
 use vortex_core::table_editor::{self, TableOp};
 use vortex_core::table_parser::{generate_latex_table, TableModel};
 use vortex_core::text::{char_col_to_utf16, utf16_to_char_col};
+use vortex_core::submission::{self, SubmissionOptions, SubmissionReport};
 use vortex_core::{latexdiff, project};
 
 // ── latexdiff ────────────────────────────────────────────────────────────────
@@ -98,6 +99,64 @@ pub async fn latexdiff(
             output_pdf: main_dir.join(name),
         };
         latexdiff::generate(&req).map(|p| p.to_string_lossy().to_string())
+    })
+    .await
+}
+
+// ── Submission ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmissionInfo {
+    /// Main document relative to the project folder, if one was found.
+    pub main_rel: Option<String>,
+    /// Whether "last commit" can be offered.
+    pub in_git: bool,
+    /// Where submission folders are created.
+    pub output_root: String,
+}
+
+fn submission_paths(state: &Shared, active: Option<&str>) -> CmdResult<(std::path::PathBuf, Option<String>)> {
+    let project = state.require_project()?;
+    let main_rel = project::main_document(active.map(Path::new), &project)
+        .and_then(|m| m.strip_prefix(&project).ok().map(|r| r.to_string_lossy().to_string()));
+    Ok((project, main_rel))
+}
+
+/// What the "Prepare submission" dialog offers.
+#[tauri::command]
+#[specta::specta]
+pub async fn submission_info(state: State<'_, Shared>, active: Option<String>) -> CmdResult<SubmissionInfo> {
+    let state = state.inner().clone();
+    blocking(move || {
+        let (project, main_rel) = submission_paths(&state, active.as_deref())?;
+        Ok(SubmissionInfo {
+            main_rel,
+            in_git: git::repo_root(&project).is_some(),
+            output_root: project.join("submitted_versions").to_string_lossy().to_string(),
+        })
+    })
+    .await
+}
+
+/// Builds a cleaned, verified source tarball in `<project>/submitted_versions/`.
+#[tauri::command]
+#[specta::specta]
+pub async fn prepare_submission(
+    state: State<'_, Shared>,
+    active: Option<String>,
+    options: SubmissionOptions,
+) -> CmdResult<SubmissionReport> {
+    let state = state.inner().clone();
+    blocking(move || {
+        let (project, main_rel) = submission_paths(&state, active.as_deref())?;
+        let req = submission::SubmissionRequest {
+            main_rel: main_rel.ok_or("No main document found in the project")?,
+            output_root: project.join("submitted_versions"),
+            project_dir: project,
+            options,
+        };
+        submission::prepare(&req)
     })
     .await
 }

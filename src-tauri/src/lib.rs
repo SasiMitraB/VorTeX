@@ -54,6 +54,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             git::git_line_markers,
             tools::latexdiff_options,
             tools::latexdiff,
+            tools::submission_info,
+            tools::prepare_submission,
             tools::grammar_check,
             tools::math_at,
             tools::math_render,

@@ -44,6 +44,8 @@
     "allow-git-line-markers",
     "allow-latexdiff-options",
     "allow-latexdiff",
+    "allow-submission-info",
+    "allow-prepare-submission",
     "allow-grammar-check",
     "allow-math-at",
     "allow-math-render",

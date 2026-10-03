@@ -1,12 +1,12 @@
 // Everything the app does in response to the user, the menu, and backend events.
 
-import { message, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { ask, message, open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { commands, events, type Settings, type ThemePreference } from "./bindings";
 import { activeTab, get, set, type PaneId, type Tab } from "./store";
 import * as models from "./editor/models";
 import { activeEditor, editorOf, forgetTab, reveal } from "./editor/registry";
 import { refreshAllGutters, showBuildDiagnostics } from "./editor/features";
-import { basename, isPdf, relativeTo } from "./lib/paths";
+import { basename, dirname, isImage, isPdf, relativeTo } from "./lib/paths";
 
 let tabSeq = 0;
 const newId = () => `tab-${++tabSeq}`;
@@ -264,6 +264,145 @@ export const refreshTree = debounced(300, async () => {
   if (get().project) set({ tree: await commands.fileTree().catch(() => get().tree) });
 });
 
+// ── File operations (explorer) ──────────────────────────────────────────────
+
+const within = (p: string, root: string) => p === root || p.startsWith(root + "/");
+
+function checkName(name: string): string | null {
+  if (!name) return "A name is required";
+  if (name === "." || name === "..") return `“${name}” is not a valid name`;
+  if (/[/\\]/.test(name)) return "Names can’t contain slashes";
+  return null;
+}
+
+function expand(folder: string) {
+  set((s) => ({ expanded: { ...s.expanded, [folder]: true } }));
+}
+
+/** Creates `name` in `parent` and opens it (files) or expands it (folders). Returns an error message on failure. */
+export async function createEntry(parent: string, name: string, kind: "file" | "folder"): Promise<string | null> {
+  const bad = checkName(name);
+  if (bad) return bad;
+  const path = `${parent}/${name}`;
+  try {
+    await (kind === "file" ? commands.createFile(path) : commands.createFolder(path));
+  } catch (e) {
+    return String(e);
+  }
+  if (parent !== get().project?.path) expand(parent);
+  if (kind === "folder") expand(path);
+  set({ tree: await commands.fileTree().catch(() => get().tree) });
+  if (kind === "file" && !isImage(path)) {
+    await openPath(path);
+    reveal(path, 1);
+  }
+  refreshGit();
+  return null;
+}
+
+/** Points open tabs (and expanded folders) at their new location after a rename or move. */
+function retarget(from: string, to: string) {
+  const move = (p: string) => (within(p, from) ? to + p.slice(from.length) : p);
+  for (const t of allTabs()) if (t.kind === "text" && t.path && within(t.path, from)) models.rekey(t.key, move(t.path));
+  const fix = (t: Tab): Tab => {
+    if (t.kind === "diff" || !t.path || !within(t.path, from)) return t;
+    const path = move(t.path);
+    return t.kind === "text" ? { ...t, key: path, path, title: basename(path) } : { ...t, path, title: basename(path) };
+  };
+  set((s) => ({
+    panes: {
+      left: { ...s.panes.left, tabs: s.panes.left.tabs.map(fix) },
+      right: { ...s.panes.right, tabs: s.panes.right.tabs.map(fix) },
+    },
+    expanded: Object.fromEntries(Object.entries(s.expanded).map(([k, v]) => [move(k), v])),
+  }));
+}
+
+/** Renames or moves `from` to `to`. Returns an error message on failure. */
+export async function renameEntry(from: string, to: string): Promise<string | null> {
+  if (from === to) return null;
+  if (within(to, from)) return "Can’t move a folder into itself";
+  const bad = checkName(basename(to));
+  if (bad) return bad;
+  try {
+    await commands.renamePath(from, to);
+  } catch (e) {
+    return String(e);
+  }
+  retarget(from, to);
+  set({ tree: await commands.fileTree().catch(() => get().tree) });
+  refreshForActiveFile();
+  refreshGit();
+  return null;
+}
+
+/** Drag and drop: moves `from` into `folder`. */
+export async function moveEntry(from: string, folder: string) {
+  const to = `${folder}/${basename(from)}`;
+  if (to === from) return;
+  const err = await renameEntry(from, to);
+  if (err) report(err);
+  else if (folder !== get().project?.path) expand(folder);
+}
+
+/** Closes tabs without asking to save (their files are gone). */
+function dropTabs(pred: (t: Tab) => boolean) {
+  const gone = allTabs().filter(pred);
+  if (!gone.length) return;
+  gone.forEach((t) => forgetTab(t.id));
+  for (const t of gone) if (t.kind === "text" && !allTabs().some((o) => o.kind === "text" && o.key === t.key && !pred(o))) models.disposeModel(t.key);
+  set((s) => {
+    const prune = (p: (typeof s.panes)["left"]) => {
+      const i = p.tabs.findIndex((t) => t.id === p.activeId);
+      const tabs = p.tabs.filter((t) => !pred(t));
+      const kept = tabs.some((t) => t.id === p.activeId);
+      return { tabs, activeId: kept ? p.activeId : (tabs[Math.min(Math.max(i, 0), tabs.length - 1)]?.id ?? null) };
+    };
+    const panes = { left: prune(s.panes.left), right: prune(s.panes.right) };
+    const other: PaneId = s.activePane === "left" ? "right" : "left";
+    return { panes, activePane: panes[s.activePane].tabs.length || !panes[other].tabs.length ? s.activePane : other };
+  });
+  refreshForActiveFile();
+}
+
+/** Moves a file or folder to the Trash after confirming. */
+export async function deleteEntry(path: string, isFolder: boolean) {
+  const name = basename(path);
+  const unsaved = models.dirtyKeys().filter((k) => within(k, path)).length;
+  const warning = unsaved ? `\n\n${unsaved === 1 ? "An open file has" : `${unsaved} open files have`} unsaved changes that will be lost.` : "";
+  const ok = await ask(`Move ${isFolder ? "the folder " : ""}“${name}”${isFolder ? " and its contents" : ""} to the Trash?${warning}`, {
+    title: "Delete",
+    kind: "warning",
+    okLabel: "Move to Trash",
+    cancelLabel: "Cancel",
+  });
+  if (!ok) return;
+  try {
+    await commands.deletePath(path);
+  } catch (e) {
+    return report(e);
+  }
+  dropTabs((t) => t.kind !== "diff" && !!t.path && within(t.path, path));
+  set((s) => ({ status: `Moved ${relativeTo(s.project?.path, path)} to the Trash` }));
+  set({ tree: await commands.fileTree().catch(() => get().tree) });
+  refreshGit();
+}
+
+export async function copyPath(path: string, relative: boolean) {
+  const text = relative ? relativeTo(get().project?.path, path) : path;
+  try {
+    await navigator.clipboard.writeText(text);
+    set({ status: `Copied ${text}` });
+  } catch (e) {
+    report(e);
+  }
+}
+
+/** Shows a folder (or a file's folder) in Finder / the file manager. */
+export function revealInFileManager(path: string, isFolder: boolean) {
+  void commands.openExternal(isFolder ? path : dirname(path)).catch(report);
+}
+
 const refreshMainDoc = debounced(150, async () => {
   const tab = activeTab();
   const active = tab?.kind === "text" ? tab.path : null;
@@ -360,10 +499,10 @@ export async function build(clean = false) {
     const result = clean ? await commands.cleanBuild(active) : await commands.build(active);
     set({ lastBuild: result, status: result.message });
     showBuildDiagnostics(result.diagnostics);
-    if (result.pdfPath) {
-      bumpPdf(result.pdfPath);
-      if (!findTab((t) => t.kind === "pdf" && t.path === result.pdfPath)) await openPdf(result.pdfPath, "right", false);
-    }
+    if (result.pdfPath) bumpPdf(result.pdfPath);
+    // latexmk leaves an up-to-date PDF alone (pdfPath is then null); show it anyway.
+    const pdf = result.pdfPath ?? (result.success ? (await commands.mainDocument(active).catch(() => null))?.pdfPath : null);
+    if (pdf) await openPdf(pdf, "right", false);
     refreshTree();
     refreshMainDoc();
   } catch (e) {
@@ -466,6 +605,8 @@ export function handleMenu(cmd: import("./bindings").MenuCommand) {
       return void syncPdf();
     case "compareVersions":
       return inWorkspace() && set({ dialog: "latexdiff" });
+    case "prepareSubmission":
+      return inWorkspace() && set({ dialog: "submission" });
   }
 }
 

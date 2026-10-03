@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
-import { ArrowLeft, Loader2, PanelLeft, PanelLeftClose, Play, ScanSearch } from "lucide-react";
+import { ArrowLeft, Loader2, PackageCheck, PanelLeft, PanelLeftClose, Play, ScanSearch } from "lucide-react";
 import { useApp } from "../store";
 import { build, showProjects, syncPdf } from "../actions";
 import { Pane } from "./Pane";
 import { Ribbon, Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 import { LatexDiffDialog } from "./LatexDiffDialog";
+import { SubmissionDialog } from "./SubmissionDialog";
 import { TableEditor } from "./TableEditor";
 
 /** A drag handle; `onDrag` gets the pointer's x in the parent's coordinates. */
@@ -60,6 +61,13 @@ function Toolbar() {
             {engineName}
           </span>
         )}
+        <button
+          className="tool-btn"
+          title="Prepare a cleaned source tarball for arXiv or a journal"
+          onClick={() => useApp.setState({ dialog: "submission" })}
+        >
+          <PackageCheck size={14} /> Submit
+        </button>
         <button className="tool-btn" title="Sync PDF to cursor (⌘J)" onClick={() => void syncPdf()}>
           <ScanSearch size={14} /> Sync PDF
         </button>
@@ -107,6 +115,7 @@ export function Workspace() {
       </div>
       <StatusBar />
       {dialog === "latexdiff" && <LatexDiffDialog />}
+      {dialog === "submission" && <SubmissionDialog />}
       {dialog === "table" && <TableEditor />}
     </div>
   );

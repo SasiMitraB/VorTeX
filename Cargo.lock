@@ -7635,6 +7635,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "dirs 5.0.1",
+ "flate2",
  "fuzzy-matcher",
  "harper-core",
  "mupdf",
@@ -7643,8 +7644,10 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "similar",
  "specta",
+ "tar",
  "tempfile",
  "walkdir",
 ]

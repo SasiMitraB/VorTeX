@@ -55,4 +55,5 @@ pub enum MenuCommand {
     CleanBuild,
     SyncPdf,
     CompareVersions,
+    PrepareSubmission,
 }

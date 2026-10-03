@@ -40,6 +40,8 @@ const COMMANDS: &[&str] = &[
     // tools
     "latexdiff_options",
     "latexdiff",
+    "submission_info",
+    "prepare_submission",
     "grammar_check",
     "math_at",
     "math_render",

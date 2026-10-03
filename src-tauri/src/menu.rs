@@ -62,6 +62,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&i("sync_pdf", "Sync PDF to Cursor", Some("CmdOrCtrl+J"))?)
         .separator()
         .item(&i("compare_versions", "Compare Versions (latexdiff)…", None)?)
+        .item(&i("prepare_submission", "Prepare Submission (arXiv / Journal)…", None)?)
         .build()?;
     let window = SubmenuBuilder::new(app, "Window").minimize().maximize().build()?;
 

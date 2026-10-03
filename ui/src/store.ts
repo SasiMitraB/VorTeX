@@ -30,7 +30,7 @@ export type Pane = { tabs: Tab[]; activeId: string | null };
 
 export type SidebarTab = "explorer" | "outline" | "git";
 
-export type Dialog = null | "latexdiff" | "table";
+export type Dialog = null | "latexdiff" | "submission" | "table";
 
 export interface AppState {
   view: "projects" | "workspace";

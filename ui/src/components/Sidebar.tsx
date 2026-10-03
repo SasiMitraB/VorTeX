@@ -1,14 +1,31 @@
-import { useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import {
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  Columns2,
+  Copy,
+  ExternalLink,
   File,
   FileCode,
   FileImage,
+  FilePlus,
   FileText,
   Files,
   Folder,
   FolderOpen,
+  FolderPlus,
   GitBranch,
   GitCommitHorizontal,
   GitCompare,
@@ -16,16 +33,32 @@ import {
   Image,
   ListTodo,
   ListTree,
+  Pencil,
   RotateCw,
   Sigma,
   Table,
   Tag,
+  Trash,
 } from "lucide-react";
 import type { LabelKind, TreeNode } from "../bindings";
-import { activeTab, set, useApp, type SidebarTab } from "../store";
-import { openDiff, openPath, refreshGit, refreshHistory } from "../actions";
+import { activeTab, get, set, useApp, type SidebarTab } from "../store";
+import {
+  copyPath,
+  createEntry,
+  deleteEntry,
+  moveEntry,
+  openDiff,
+  openPath,
+  refreshGit,
+  refreshHistory,
+  refreshTree,
+  renameEntry,
+  report,
+  revealInFileManager,
+} from "../actions";
 import { reveal } from "../editor/registry";
-import { basename, extname } from "../lib/paths";
+import { basename, dirname, extname } from "../lib/paths";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 
 const useActivePath = () =>
   useApp((s) => {
@@ -75,10 +108,22 @@ export function Sidebar() {
   );
 }
 
-function Section({ title, count, children, actions }: { title: string; count?: number; children: ReactNode; actions?: ReactNode }) {
+function Section({
+  title,
+  count,
+  children,
+  actions,
+  className = "",
+}: {
+  title: string;
+  count?: number;
+  children: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+}) {
   const [open, setOpen] = useState(true);
   return (
-    <section className="side-section">
+    <section className={`side-section ${className}`}>
       <header onClick={() => setOpen(!open)}>
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <span>{title}</span>
@@ -102,39 +147,384 @@ export function fileIcon(path: string, size = 14) {
   return <File size={size} className="muted" />;
 }
 
-function TreeItem({ node, depth, activePath }: { node: TreeNode; depth: number; activePath: string | null }) {
-  const open = useApp((s) => !!s.expanded[node.path]);
-  const pad = { paddingLeft: 8 + depth * 14 };
-  if (node.type === "folder")
-    return (
-      <>
-        <div className="tree-row" style={pad} onClick={() => set((s) => ({ expanded: { ...s.expanded, [node.path]: !open } }))}>
-          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          {open ? <FolderOpen size={14} className="icon-folder" /> : <Folder size={14} className="icon-folder" />}
-          <span className="ellipsis">{node.name}</span>
-        </div>
-        {open && node.children?.map((c) => <TreeItem key={c.path} node={c} depth={depth + 1} activePath={activePath} />)}
-      </>
-    );
+type Editing = { mode: "file" | "folder"; parent: string } | { mode: "rename"; path: string } | null;
+
+interface ExplorerUi {
+  focused: string | null;
+  menuTarget: string | null;
+  editing: Editing;
+  dropTarget: string | null;
+  focus: (path: string) => void;
+  stopEditing: () => void;
+  openMenu: (e: MouseEvent, node: TreeNode | null) => void;
+  dragOver: (e: DragEvent, folder: string) => void;
+  drop: (e: DragEvent, folder: string) => void;
+}
+
+const ExplorerCtx = createContext<ExplorerUi>(null!);
+const DRAG_TYPE = "application/x-vortex-path";
+const isMac = navigator.userAgent.includes("Mac");
+
+function findNode(nodes: TreeNode[], path: string): TreeNode | null {
+  for (const n of nodes) {
+    if (n.path === path) return n;
+    if (n.children && path.startsWith(n.path + "/")) return findNode(n.children, path);
+  }
+  return null;
+}
+
+/** The rows currently on screen, top to bottom. */
+function visibleNodes(nodes: TreeNode[], expanded: Record<string, boolean>, out: TreeNode[] = []): TreeNode[] {
+  for (const n of nodes) {
+    out.push(n);
+    if (n.children && expanded[n.path]) visibleNodes(n.children, expanded, out);
+  }
+  return out;
+}
+
+const toggleFolder = (path: string) => set((s) => ({ expanded: { ...s.expanded, [path]: !s.expanded[path] } }));
+
+/** Inline name box for new files/folders and renames. */
+function NameInput({
+  depth,
+  icon,
+  initial,
+  submit,
+}: {
+  depth: number;
+  icon: ReactNode;
+  initial: string;
+  submit: (name: string) => Promise<string | null>;
+}) {
+  const { stopEditing } = useContext(ExplorerCtx);
+  const ref = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const state = useRef<"idle" | "busy" | "done">("idle");
+
+  useEffect(() => {
+    const el = ref.current!;
+    el.focus();
+    const dot = initial.lastIndexOf(".");
+    el.setSelectionRange(0, dot > 0 ? dot : initial.length);
+  }, [initial]);
+
+  const commit = async (onBlur: boolean) => {
+    if (state.current !== "idle") return;
+    const name = ref.current!.value.trim();
+    if (!name || name === initial) {
+      state.current = "done";
+      return stopEditing();
+    }
+    state.current = "busy";
+    const err = await submit(name);
+    if (!err || onBlur) {
+      if (err) report(err);
+      state.current = "done";
+      return stopEditing();
+    }
+    state.current = "idle";
+    setError(err);
+  };
+
   return (
-    <div className={`tree-row ${activePath === node.path ? "selected" : ""}`} style={pad} onClick={() => void openPath(node.path)}>
+    <div className="tree-row editing" style={{ paddingLeft: 8 + depth * 14 }}>
       <span className="chevron-space" />
-      {fileIcon(node.path)}
+      {icon}
+      <div className="name-input">
+        <input
+          ref={ref}
+          defaultValue={initial}
+          spellCheck={false}
+          className={error ? "invalid" : ""}
+          onChange={() => setError(null)}
+          onBlur={() => void commit(true)}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") void commit(false);
+            if (e.key === "Escape") {
+              state.current = "done";
+              stopEditing();
+            }
+          }}
+        />
+        {error && <div className="name-error">{error}</div>}
+      </div>
+    </div>
+  );
+}
+
+function NewEntryInput({ parent, mode, depth }: { parent: string; mode: "file" | "folder"; depth: number }) {
+  return (
+    <NameInput
+      depth={depth}
+      initial=""
+      icon={mode === "file" ? <File size={14} className="muted" /> : <Folder size={14} className="icon-folder" />}
+      submit={(name) => createEntry(parent, name, mode)}
+    />
+  );
+}
+
+function TreeItem({ node, depth, activePath }: { node: TreeNode; depth: number; activePath: string | null }) {
+  const ui = useContext(ExplorerCtx);
+  const open = useApp((s) => !!s.expanded[node.path]);
+  const isFolder = node.type === "folder";
+  const pad = { paddingLeft: 8 + depth * 14 };
+
+  if (ui.editing?.mode === "rename" && ui.editing.path === node.path)
+    return (
+      <NameInput
+        depth={depth}
+        initial={node.name}
+        icon={isFolder ? <Folder size={14} className="icon-folder" /> : fileIcon(node.path)}
+        submit={(name) => renameEntry(node.path, `${dirname(node.path)}/${name}`)}
+      />
+    );
+
+  const dropFolder = isFolder ? node.path : dirname(node.path);
+  const classes = [
+    "tree-row",
+    activePath === node.path && "selected",
+    ui.focused === node.path && "focused",
+    ui.menuTarget === node.path && "menu-target",
+    isFolder && ui.dropTarget === node.path && "drop-target",
+  ].filter(Boolean);
+
+  const row = (
+    <div
+      className={classes.join(" ")}
+      style={pad}
+      data-path={node.path}
+      title={node.name}
+      draggable
+      onClick={() => {
+        ui.focus(node.path);
+        if (isFolder) toggleFolder(node.path);
+        else void openPath(node.path);
+      }}
+      onContextMenu={(e) => ui.openMenu(e, node)}
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DRAG_TYPE, node.path);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(e) => ui.dragOver(e, dropFolder)}
+      onDrop={(e) => ui.drop(e, dropFolder)}
+    >
+      {isFolder ? open ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : <span className="chevron-space" />}
+      {isFolder ? (
+        open ? (
+          <FolderOpen size={14} className="icon-folder" />
+        ) : (
+          <Folder size={14} className="icon-folder" />
+        )
+      ) : (
+        fileIcon(node.path)
+      )}
       <span className="ellipsis">{node.name}</span>
     </div>
+  );
+  if (!isFolder) return row;
+  const creating = ui.editing && ui.editing.mode !== "rename" && ui.editing.parent === node.path ? ui.editing.mode : null;
+  return (
+    <>
+      {row}
+      {open && (
+        <>
+          {creating && <NewEntryInput parent={node.path} mode={creating} depth={depth + 1} />}
+          {node.children?.map((c) => <TreeItem key={c.path} node={c} depth={depth + 1} activePath={activePath} />)}
+        </>
+      )}
+    </>
   );
 }
 
 function Explorer() {
   const tree = useApp((s) => s.tree);
-  const name = useApp((s) => s.project?.name ?? "");
+  const project = useApp((s) => s.project);
+  const root = project?.path ?? "";
   const activePath = useActivePath();
+  const treeRef = useRef<HTMLDivElement>(null);
+  const [focused, setFocused] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Editing>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; node: TreeNode | null } | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  // Forget a focused row that no longer exists (deleted, renamed, moved).
+  useEffect(() => {
+    if (focused && !findNode(tree, focused)) setFocused(null);
+  }, [tree, focused]);
+
+  /** The folder new entries go in: the focused folder, the focused file's folder, or the project root. */
+  const targetFolder = () => {
+    const n = focused ? findNode(tree, focused) : null;
+    return n ? (n.type === "folder" ? n.path : dirname(n.path)) : root;
+  };
+
+  const startCreate = (mode: "file" | "folder", parent: string) => {
+    if (parent !== root) set((s) => ({ expanded: { ...s.expanded, [parent]: true } }));
+    set({ sidebarVisible: true, sidebarTab: "explorer" });
+    setEditing({ mode, parent });
+  };
+
+  const ui: ExplorerUi = {
+    focused,
+    menuTarget: menu?.node?.path ?? null,
+    editing,
+    dropTarget,
+    focus: setFocused,
+    stopEditing: () => {
+      setEditing(null);
+      // Keep keyboard navigation going, unless focus already moved on (e.g. to a newly opened file).
+      if (treeRef.current?.contains(document.activeElement)) treeRef.current.focus();
+    },
+    openMenu: (e, node) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (node) setFocused(node.path);
+      setMenu({ x: e.clientX, y: e.clientY, node });
+    },
+    dragOver: (e, folder) => {
+      if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      if (dropTarget !== folder) setDropTarget(folder);
+    },
+    drop: (e, folder) => {
+      const from = e.dataTransfer.getData(DRAG_TYPE);
+      setDropTarget(null);
+      if (!from) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void moveEntry(from, folder);
+    },
+  };
+
+  const menuItems = (node: TreeNode | null): MenuItem[] => {
+    const reveal = isMac ? "Reveal in Finder" : "Open Containing Folder";
+    if (!node)
+      return [
+        { label: "New File…", icon: <FilePlus size={14} />, run: () => startCreate("file", root) },
+        { label: "New Folder…", icon: <FolderPlus size={14} />, run: () => startCreate("folder", root) },
+        "separator",
+        { label: "Collapse All", icon: <ChevronsDownUp size={14} />, run: () => set({ expanded: {} }) },
+        { label: "Refresh", icon: <RotateCw size={14} />, run: () => refreshTree() },
+        "separator",
+        { label: reveal, icon: <ExternalLink size={14} />, run: () => revealInFileManager(root, true) },
+      ];
+    const isFolder = node.type === "folder";
+    const folder = isFolder ? node.path : dirname(node.path);
+    const other = get().activePane === "left" ? "right" : "left";
+    return [
+      ...(isFolder
+        ? []
+        : ([
+            { label: "Open", run: () => void openPath(node.path) },
+            { label: "Open to the Side", icon: <Columns2 size={14} />, run: () => void openPath(node.path, other) },
+            "separator",
+          ] as MenuItem[])),
+      { label: "New File…", icon: <FilePlus size={14} />, run: () => startCreate("file", folder) },
+      { label: "New Folder…", icon: <FolderPlus size={14} />, run: () => startCreate("folder", folder) },
+      "separator",
+      { label: "Rename…", icon: <Pencil size={14} />, shortcut: "↵", run: () => setEditing({ mode: "rename", path: node.path }) },
+      {
+        label: "Move to Trash",
+        icon: <Trash size={14} />,
+        shortcut: isMac ? "⌘⌫" : "Del",
+        danger: true,
+        run: () => void deleteEntry(node.path, isFolder),
+      },
+      "separator",
+      { label: "Copy Path", icon: <Copy size={14} />, run: () => void copyPath(node.path, false) },
+      { label: "Copy Relative Path", run: () => void copyPath(node.path, true) },
+      { label: reveal, icon: <ExternalLink size={14} />, run: () => revealInFileManager(node.path, isFolder) },
+    ];
+  };
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (editing) return;
+    const rows = visibleNodes(tree, get().expanded);
+    const i = rows.findIndex((n) => n.path === focused);
+    const node = rows[i];
+    const moveTo = (n: TreeNode | undefined) => {
+      if (!n) return;
+      setFocused(n.path);
+      treeRef.current?.querySelector(`[data-path="${CSS.escape(n.path)}"]`)?.scrollIntoView({ block: "nearest" });
+    };
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      return moveTo(i < 0 ? rows[0] : rows[e.key === "ArrowDown" ? i + 1 : i - 1]);
+    }
+    if (!node) return;
+    const isFolder = node.type === "folder";
+    const open = !!get().expanded[node.path];
+    if (e.key === "ArrowRight" && isFolder) {
+      e.preventDefault();
+      return open ? moveTo(node.children?.[0]) : toggleFolder(node.path);
+    }
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      return isFolder && open ? toggleFolder(node.path) : moveTo(findNode(tree, dirname(node.path)) ?? undefined);
+    }
+    if (e.key === "Enter" || e.key === "F2") {
+      e.preventDefault();
+      return setEditing({ mode: "rename", path: node.path });
+    }
+    if (e.key === " ") {
+      e.preventDefault();
+      return isFolder ? toggleFolder(node.path) : void openPath(node.path);
+    }
+    if (e.key === "Delete" || (e.key === "Backspace" && (e.metaKey || e.ctrlKey))) {
+      e.preventDefault();
+      return void deleteEntry(node.path, isFolder);
+    }
+  };
+
+  const creatingAtRoot = editing && editing.mode !== "rename" && editing.parent === root ? editing.mode : null;
+
   return (
-    <Section title={name.toUpperCase()}>
-      {tree.map((n) => (
-        <TreeItem key={n.path} node={n} depth={0} activePath={activePath} />
-      ))}
-    </Section>
+    <ExplorerCtx.Provider value={ui}>
+      <Section
+        title={(project?.name ?? "").toUpperCase()}
+        className="explorer"
+        actions={
+          <>
+            <button className="icon-btn" title="New File" onClick={() => startCreate("file", targetFolder())}>
+              <FilePlus size={13} />
+            </button>
+            <button className="icon-btn" title="New Folder" onClick={() => startCreate("folder", targetFolder())}>
+              <FolderPlus size={13} />
+            </button>
+            <button className="icon-btn" title="Refresh" onClick={() => refreshTree()}>
+              <RotateCw size={13} />
+            </button>
+            <button className="icon-btn" title="Collapse All" onClick={() => set({ expanded: {} })}>
+              <ChevronsDownUp size={13} />
+            </button>
+          </>
+        }
+      >
+        <div
+          ref={treeRef}
+          className={`tree ${dropTarget === root ? "drop-target" : ""}`}
+          tabIndex={0}
+          onKeyDown={onKeyDown}
+          onClick={(e) => e.target === e.currentTarget && setFocused(null)}
+          onContextMenu={(e) => ui.openMenu(e, null)}
+          onDragOver={(e) => ui.dragOver(e, root)}
+          onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setDropTarget(null)}
+          onDrop={(e) => ui.drop(e, root)}
+          onDragEnd={() => setDropTarget(null)}
+        >
+          {creatingAtRoot && <NewEntryInput parent={root} mode={creatingAtRoot} depth={0} />}
+          {tree.map((n) => (
+            <TreeItem key={n.path} node={n} depth={0} activePath={activePath} />
+          ))}
+          {tree.length === 0 && !creatingAtRoot && <div className="side-empty">This folder is empty</div>}
+        </div>
+      </Section>
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.node)} onClose={closeMenu} />}
+    </ExplorerCtx.Provider>
   );
 }
 
@@ -276,6 +666,7 @@ function SourceControl() {
               <GitCommitHorizontal size={13} className="muted" />
               <div className="commit-text">
                 <div className="ellipsis">{c.subject}</div>
+                <TagChips tags={c.tags} />
                 <div className="muted small">
                   <span className="mono">{c.shortHash}</span> · {c.author} · {c.relativeDate}
                 </div>
@@ -284,6 +675,19 @@ function SourceControl() {
           ))}
       </Section>
     </>
+  );
+}
+
+export function TagChips({ tags }: { tags: string[] }) {
+  if (tags.length === 0) return null;
+  return (
+    <div className="tag-chips">
+      {tags.map((t) => (
+        <span key={t} className={`tag-chip ${t.startsWith("submitted/") ? "submitted" : ""}`} title={t}>
+          <Tag size={10} /> {t.replace(/^submitted\//, "")}
+        </span>
+      ))}
+    </div>
   );
 }
 

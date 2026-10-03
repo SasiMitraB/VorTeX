@@ -24,6 +24,9 @@ chrono = "0.4"
 mupdf = "0.8"
 harper-core = "2"
 similar = { version = "2", features = ["inline"] }
+sha2 = "0.10"
+tar = "0.4"
+flate2 = "1"
 
 [dev-dependencies]
 tempfile = "3.10"
