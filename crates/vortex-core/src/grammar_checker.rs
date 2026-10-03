@@ -3,7 +3,10 @@
 /// Runs `harper-core` on preprocessed LaTeX text and maps the resulting lint
 /// spans back to (row, col) positions in the original `.tex` buffer.
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use harper_core::{
     linting::{LintGroup, Linter},
@@ -20,7 +23,7 @@ use crate::grammar_preprocess::{inline_math_ranges, preprocess_latex};
 // ---------------------------------------------------------------------------
 
 /// English spelling conventions to check against.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "lowercase")]
 pub enum GrammarDialect {
@@ -66,6 +69,9 @@ pub struct GrammarDiagnostic {
 ///
 /// `bib` should be the project's full BibTeX entry map (key → BibEntryItem),
 /// used to resolve `\cite` commands into author-year text.
+///
+/// The cleaned text is linted paragraph by paragraph and each paragraph's lints are
+/// cached by content, so after an edit only the paragraphs that changed are linted again.
 pub fn run_grammar_check(
     orig_content: &str,
     bib: &HashMap<String, BibEntryItem>,
@@ -77,36 +83,19 @@ pub fn run_grammar_check(
         return Vec::new();
     }
 
-    // 2. Curated dictionary is an Arc<FstDictionary>
-    let dict = FstDictionary::curated();
-
-    // 3. Create document
-    let parser = PlainEnglish;
-    let document = Document::new_curated(&cleaned, &parser);
-
-    // 4. Create linter for the requested dialect
-    let mut linter = LintGroup::new_curated(dict, dialect.into());
-    // Whitespace in LaTeX source (indentation, alignment) is not prose.
-    linter.config.set_rule_enabled("Spaces", false);
-    linter.config.set_rule_enabled("NoFrenchSpaces", false);
-
-    // 5. Lint
-    let lints = linter.lint(&document);
+    // 2. Lint each paragraph of the cleaned text, reusing cached results
+    let mut checker = checker().lock().unwrap_or_else(|e| e.into_inner());
+    let lints = checker.lint(&cleaned, dialect);
     if lints.is_empty() {
         return Vec::new();
     }
 
-    // 6. Map each lint span back to original positions
-    let orig_bytes = orig_content.as_bytes();
+    // 3. Map each lint span back to original positions
+    let lines = LineIndex::new(orig_content);
     let math = inline_math_ranges(orig_content);
     let mut diagnostics = Vec::with_capacity(lints.len());
 
-    for lint in lints {
-        let span = lint.span;
-        // Convert char-index span to byte offsets in the cleaned string
-        let clean_byte_start = char_index_to_byte(&cleaned, span.start);
-        let clean_byte_end = char_index_to_byte(&cleaned, span.end);
-
+    for (clean_byte_start, clean_byte_end, message) in lints {
         let orig_byte_start = source_map.to_orig(clean_byte_start);
         let orig_byte_end = source_map.to_orig(clean_byte_end).max(orig_byte_start + 1);
         let orig_byte_end = orig_byte_end.min(orig_content.len());
@@ -115,29 +104,18 @@ pub fn run_grammar_check(
         }
 
         // Convert orig byte offsets to (row, col_char)
-        let (row_start, col_start) = byte_to_row_col(orig_bytes, orig_byte_start);
-        let (row_end, col_end) = byte_to_row_col(orig_bytes, orig_byte_end);
+        let (row_start, col_start) = lines.row_col(orig_byte_start);
+        let (row_end, col_end) = lines.row_col(orig_byte_end);
 
-        // Only emit single-line diagnostics for now (multi-line is rare for grammar)
-        let (final_row, final_col_start, final_col_end) = if row_start == row_end {
-            (row_start, col_start, col_end)
-        } else {
-            // Clamp to end of starting line
-            let line_end = orig_content
-                .lines()
-                .nth(row_start)
-                .map(|l| l.chars().count())
-                .unwrap_or(col_end);
-            (row_start, col_start, line_end)
-        };
-
-        let message = lint.message.to_string();
+        // Only emit single-line diagnostics for now (multi-line is rare for grammar):
+        // clamp to the end of the starting line.
+        let col_end = if row_start == row_end { col_end } else { lines.line_chars(row_start) };
 
         diagnostics.push(GrammarDiagnostic {
-            row: final_row,
-            col_start: final_col_start,
-            col_end: final_col_end,
-            message,
+            row: row_start,
+            col_start,
+            col_end,
+            message: message.to_string(),
         });
     }
 
@@ -145,33 +123,141 @@ pub fn run_grammar_check(
 }
 
 // ---------------------------------------------------------------------------
+// Incremental linting
+// ---------------------------------------------------------------------------
+
+/// Paragraph caches are trimmed once they hold more entries than this…
+const CACHE_LIMIT: usize = 4096;
+/// …down to the paragraphs seen in this many recent checks.
+const CACHE_KEEP_RUNS: u64 = 16;
+
+/// A lint in one paragraph: byte span relative to the paragraph, and its message.
+type ParagraphLint = (usize, usize, Arc<str>);
+
+struct CachedParagraph {
+    lints: Arc<[ParagraphLint]>,
+    last_used: u64,
+}
+
+/// One linter per dialect, kept for the life of the process: Harper loads its dictionary and
+/// rules once, and its own sentence caches stay warm between checks.
+struct Checker {
+    linters: HashMap<GrammarDialect, LintGroup>,
+    paragraphs: HashMap<(u64, GrammarDialect), CachedParagraph>,
+    run: u64,
+}
+
+fn checker() -> &'static Mutex<Checker> {
+    static CHECKER: OnceLock<Mutex<Checker>> = OnceLock::new();
+    CHECKER.get_or_init(|| {
+        Mutex::new(Checker { linters: HashMap::new(), paragraphs: HashMap::new(), run: 0 })
+    })
+}
+
+impl Checker {
+    /// Lints of `cleaned` as (start byte, end byte, message), in document order.
+    fn lint(&mut self, cleaned: &str, dialect: GrammarDialect) -> Vec<(usize, usize, Arc<str>)> {
+        self.run += 1;
+        let run = self.run;
+        let mut out = Vec::new();
+
+        for (offset, paragraph) in paragraphs(cleaned) {
+            let key = (hash(paragraph), dialect);
+            let lints = match self.paragraphs.get_mut(&key) {
+                Some(cached) => {
+                    cached.last_used = run;
+                    cached.lints.clone()
+                }
+                None => {
+                    let linter = self.linters.entry(dialect).or_insert_with(|| new_linter(dialect));
+                    let lints = lint_paragraph(linter, paragraph);
+                    self.paragraphs.insert(key, CachedParagraph { lints: lints.clone(), last_used: run });
+                    lints
+                }
+            };
+            out.extend(lints.iter().map(|(s, e, m)| (offset + s, offset + e, m.clone())));
+        }
+
+        if self.paragraphs.len() > CACHE_LIMIT {
+            self.paragraphs.retain(|_, p| run - p.last_used < CACHE_KEEP_RUNS);
+        }
+        out
+    }
+}
+
+fn new_linter(dialect: GrammarDialect) -> LintGroup {
+    let mut linter = LintGroup::new_curated(FstDictionary::curated(), dialect.into());
+    // Whitespace in LaTeX source (indentation, alignment) is not prose.
+    linter.config.set_rule_enabled("Spaces", false);
+    linter.config.set_rule_enabled("NoFrenchSpaces", false);
+    linter
+}
+
+fn lint_paragraph(linter: &mut LintGroup, paragraph: &str) -> Arc<[ParagraphLint]> {
+    let document = Document::new_curated(paragraph, &PlainEnglish);
+    let lints = linter.lint(&document);
+    if lints.is_empty() {
+        return Arc::new([]);
+    }
+    // Harper spans count chars; the source map works in bytes.
+    let char_bytes: Vec<usize> = paragraph.char_indices().map(|(b, _)| b).collect();
+    let to_byte = |c: usize| char_bytes.get(c).copied().unwrap_or(paragraph.len());
+    lints
+        .into_iter()
+        .map(|l| (to_byte(l.span.start), to_byte(l.span.end), Arc::from(l.message)))
+        .collect()
+}
+
+/// Non-blank paragraphs of `text` (split at blank lines) with their byte offsets.
+fn paragraphs(text: &str) -> impl Iterator<Item = (usize, &str)> {
+    let mut start = 0;
+    let ends = text.match_indices("\n\n").map(|(i, _)| i).chain(std::iter::once(text.len()));
+    ends.filter_map(move |end| {
+        let paragraph = (start, &text[start..end]);
+        start = end + 2;
+        (!paragraph.1.trim().is_empty()).then_some(paragraph)
+    })
+}
+
+fn hash(text: &str) -> u64 {
+    let mut h = DefaultHasher::new();
+    text.hash(&mut h);
+    h.finish()
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Convert a char index (as produced by harper's span) to a byte offset
-/// in a UTF-8 string.
-fn char_index_to_byte(s: &str, char_idx: usize) -> usize {
-    s.char_indices()
-        .nth(char_idx)
-        .map(|(b, _)| b)
-        .unwrap_or(s.len())
+/// Byte offsets of line starts, to turn byte offsets into (row, char column).
+struct LineIndex<'a> {
+    text: &'a str,
+    starts: Vec<usize>,
 }
 
-/// Convert a byte offset in a UTF-8 buffer to (0-indexed row, 0-indexed char col).
-fn byte_to_row_col(bytes: &[u8], byte_offset: usize) -> (usize, usize) {
-    let byte_offset = byte_offset.min(bytes.len());
-    let prefix = &bytes[..byte_offset];
-    let row = prefix.iter().filter(|&&b| b == b'\n').count();
-    let line_start = prefix
-        .iter()
-        .rposition(|&b| b == b'\n')
-        .map(|p| p + 1)
-        .unwrap_or(0);
-    let col_bytes = &bytes[line_start..byte_offset];
-    let col_chars = std::str::from_utf8(col_bytes)
-        .map(|s| s.chars().count())
-        .unwrap_or(col_bytes.len());
-    (row, col_chars)
+impl<'a> LineIndex<'a> {
+    fn new(text: &'a str) -> Self {
+        let starts = std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect();
+        Self { text, starts }
+    }
+
+    /// 0-indexed row and char column of `byte_offset`.
+    fn row_col(&self, byte_offset: usize) -> (usize, usize) {
+        let byte_offset = byte_offset.min(self.text.len());
+        let row = self.starts.partition_point(|&s| s <= byte_offset) - 1;
+        let col_bytes = &self.text.as_bytes()[self.starts[row]..byte_offset];
+        let col_chars = std::str::from_utf8(col_bytes)
+            .map(|s| s.chars().count())
+            .unwrap_or(col_bytes.len());
+        (row, col_chars)
+    }
+
+    /// Length of `row` in chars, without its line break.
+    fn line_chars(&self, row: usize) -> usize {
+        let start = self.starts[row];
+        let end = self.starts.get(row + 1).map_or(self.text.len(), |&s| s - 1);
+        self.text[start..end].trim_end_matches('\r').chars().count()
+    }
 }
 
 #[cfg(test)]
@@ -221,6 +307,34 @@ And inline $a^2 + b^2 = c^2$ holds.
         let flagged = |d| run_grammar_check(tex, &HashMap::new(), d).iter().any(|x| x.col_start == 4);
         assert!(!flagged(GrammarDialect::British));
         assert!(flagged(GrammarDialect::American));
+    }
+
+    #[test]
+    fn paragraphs_split_at_blank_lines() {
+        let text = "One two.\n\nThree\nfour.\n\n\n\nFive.\n\n";
+        let got: Vec<_> = paragraphs(text).collect();
+        assert_eq!(got, vec![(0, "One two."), (10, "Three\nfour."), (25, "Five.")]);
+        for (offset, p) in got {
+            assert_eq!(&text[offset..offset + p.len()], p);
+        }
+    }
+
+    #[test]
+    fn cached_paragraphs_keep_their_positions_after_an_edit() {
+        let first = "Intro text is fine.\n\nWe recieve teh data.\n";
+        let edited = "Intro text is fine and longer now.\nAnother line.\n\nWe recieve teh data.\n";
+        let at = |tex| {
+            run_grammar_check(tex, &HashMap::new(), GrammarDialect::British)
+                .into_iter()
+                .filter(|d| d.row >= 2)
+                .map(|d| (d.row, d.col_start, d.col_end))
+                .collect::<Vec<_>>()
+        };
+        let before = at(first);
+        assert!(!before.is_empty());
+        // The second paragraph is unchanged (served from the cache) but moved down a line.
+        let after = at(edited);
+        assert_eq!(after, before.iter().map(|&(r, s, e)| (r + 1, s, e)).collect::<Vec<_>>());
     }
 
     #[test]
